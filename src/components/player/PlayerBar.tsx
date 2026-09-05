@@ -46,13 +46,12 @@ export function PlayerBar() {
 
   const handleLike = async () => {
     if (!currentTrack || likeLoading) return;
+    const trackId = currentTrack.id;
+    if (!trackId) return;
     setLikeLoading(true);
     try {
-      const trackId = currentTrack.id ?? currentTrack.sources?.[0]?.providerVideoId ?? "";
-      const res = await fetch("/api/likes/tracks", {
+      const res = await fetch(`/api/tracks/${trackId}/like`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId }),
       });
       if (res.ok) setLiked((v) => !v);
     } catch {

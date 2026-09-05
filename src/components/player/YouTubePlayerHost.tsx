@@ -124,8 +124,8 @@ export default function YouTubePlayerHost() {
       if (!document.getElementById(containerId)) return;
 
       playerRef.current = new window.YT.Player(containerId, {
-        width: "0",
-        height: "0",
+        width: "640",
+        height: "360",
         videoId: videoId ?? undefined,
         host: "https://www.youtube.com",
         playerVars: {
@@ -255,10 +255,22 @@ export default function YouTubePlayerHost() {
       return;
     }
     try {
-      // loadVideoById will autoplay; cue if not playing
       const shouldPlay = usePlayerStore.getState().isPlaying;
+      const { muted: isMuted, volume: vol } = usePlayerStore.getState();
       if (shouldPlay) {
-        (p as YTPlayer).loadVideoById(vid);
+        // Autoplay with sound is blocked unless muted - load muted then unmute after play starts
+        if (!isMuted && vol > 0) {
+          try { p.mute?.(); } catch {}
+          (p as YTPlayer).loadVideoById(vid);
+          setTimeout(() => {
+            try {
+              p.unMute?.();
+              p.setVolume(vol);
+            } catch {}
+          }, 800);
+        } else {
+          (p as YTPlayer).loadVideoById(vid);
+        }
       } else {
         (p as YTPlayer).cueVideoById?.(vid);
         if ((p as YTPlayer).cueVideoById == null) {
@@ -354,11 +366,13 @@ export default function YouTubePlayerHost() {
       aria-hidden
       style={{
         position: "absolute",
-        width: 0,
-        height: 0,
+        left: -9999,
+        top: -9999,
+        width: 640,
+        height: 360,
         overflow: "hidden",
         pointerEvents: "none",
-        visibility: "hidden",
+        opacity: 0.01,
       }}
     >
       <div id="geet-yt-host-player" />
