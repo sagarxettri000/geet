@@ -187,13 +187,34 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   const liked = await db.likedTrack.findMany({ where: { userId }, select: { trackId: true } });
   const likedSet = new Set(liked.map((l) => l.trackId));
 
-  // Every visit pulls a fresh hand of top artists and genres and shuffles the
-  // pools, so the rows never show the same songs twice in a row.
+  // ---- YouTube-style ranking context ---------------------------------
+  // Predict what you'd keep listening to from a blend of: how often you play
+  // the artist and genre (affinity), the track's popularity, how recently it
+  // was added (freshness), plus a jitter term so the same feed never shows
+  // up twice in a row.
+  const artistAff = new Map<string, number>();
+  for (const [key, v] of artistCounts) artistAff.set(key, v.count);
+  const genreAff = new Map<string, number>();
+  for (const [genreId, count] of genreCounts) genreAff.set(genreId, count);
+
+  // A track added in the last two weeks counts as "fresh" (like a new upload),
+  // and gets an extra boost the way YouTube surges fresh videos.
+  const freshCutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+  // Once a track is placed in a row it is removed from every later pool:
+  // YouTube never shows the same video twice on one home page.
+  const picked = new Set<string>();
+
+  const ctx = { artistAff, genreAff, freshCutoff, jitter: 6 };
+
+  // Every visit pulls a fresh hand of top artists and genres.
   const topArtists = shuffle(
     [...artistCounts.values()].sort((a, b) => b.count - a.count).slice(0, 12)
   );
 
   const rows: RecommendationRow[] = [];
+
+  // Rows 1–3: what you already like, fronted with the strongest matches.
   for (const artist of topArtists) {
     if (rows.length >= 3) break;
     const where = artist.id ? { artistId: artist.id } : { artistName: artist.name };
@@ -204,14 +225,13 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
       take: 40,
     });
 
-    // Heard songs are banned forever — only tracks you've never played qualify.
-    const mains = shuffle(byArtist.filter((t) => !listened.has(t.id))).slice(0, 6);
+    const mains = byArtist.filter((t) => !listened.has(t.id));
 
-    // Top up the row with related, never-heard tracks from the same genre so a
-    // refresh keeps serving genuinely new songs instead of the same handful.
+    // Top up the row with related, never-heard tracks from the same genre —
+    // YouTube's "related video" widening, so a refresh serves new music.
     const artistGenre = byArtist[0]?.genreId ?? null;
     let related: typeof byArtist = [];
-    if (artistGenre) {
+    if (artistGenre && mains.length < 6) {
       const relatedWhere: Record<string, unknown> = {
         genreId: artistGenre,
         id: { notIn: [...listened] },
@@ -226,7 +246,16 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
       });
     }
 
-    const pools = shuffle([...mains, ...related]).slice(0, 12);
+    const rankedMains = rankTracks(mains.filter((t) => !picked.has(t.id)), ctx, 6);
+    for (const t of rankedMains) picked.add(t.id);
+    const rankedRelated = rankTracks(
+      related.filter((t) => !picked.has(t.id)),
+      ctx,
+      12 - rankedMains.length
+    );
+    for (const t of rankedRelated) picked.add(t.id);
+
+    const pools = [...rankedMains, ...rankedRelated];
     if (pools.length === 0) continue;
     rows.push({
       key: `because-artist-${artist.id ?? artist.name}`,
@@ -236,19 +265,20 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
-  // Genre rows — "More {genre}" from what you actually play, always brand new.
+  // Genre rows — "More {genre}", scored and never duplicating earlier rows.
   for (const [genreId] of shuffle([...genreCounts.entries()])) {
     if (rows.length >= 3) break;
     const name = genreNameMap.get(genreId);
     if (!name) continue;
     const all = await db.track.findMany({
-      where: { genreId, id: { notIn: [...listened] } },
+      where: { genreId, id: { notIn: [...listened, ...picked] } },
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
       take: 60,
     });
-    const pools = shuffle(all).slice(0, 12);
+    const pools = rankTracks(all, ctx, 10);
     if (pools.length === 0) continue;
+    for (const t of pools) picked.add(t.id);
     rows.push({
       key: `because-genre-${genreId}`,
       title: `More ${name}`,
@@ -257,8 +287,9 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
-  // "Discover" rows — artists you haven't listened to yet, so the feed is
-  // always suggesting something new rather than looping the same favourites.
+  // Guaranteed exploration slice — YouTube always devotes part of the page to
+  // things you've never touched, even when predicted interest is lower. This is
+  // the mechanism that stops the feed from looping on your favourites.
   const freshArtists = await db.artist.findMany({
     where: listenedArtists.size ? { id: { notIn: [...listenedArtists] } } : undefined,
     orderBy: { monthlyListeners: "desc" },
@@ -267,13 +298,14 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   for (const artist of shuffle(freshArtists)) {
     if (rows.length >= 4) break;
     const all = await db.track.findMany({
-      where: { artistId: artist.id, id: { notIn: [...listened] } },
+      where: { artistId: artist.id, id: { notIn: [...listened, ...picked] } },
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
       take: 24,
     });
-    const pools = shuffle(all.filter((t) => t.sources.length > 0)).slice(0, 12);
+    const pools = rankTracks(all.filter((t) => t.sources.length > 0), ctx, 10);
     if (pools.length === 0) continue;
+    for (const t of pools) picked.add(t.id);
     rows.push({
       key: `discover-artist-${artist.id}`,
       title: `Discover ${artist.name}`,
@@ -283,6 +315,44 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   }
 
   return rows.slice(0, 4);
+}
+
+interface ScoreContext {
+  artistAff: Map<string, number>;
+  genreAff: Map<string, number>;
+  freshCutoff: number;
+  jitter: number;
+}
+
+interface ScorableTrack {
+  id: string;
+  artistId: string | null;
+  artistName: string;
+  genreId: string | null;
+  popularity: number;
+  createdAt: Date;
+}
+
+// Rank candidates the way YouTube's candidate reranker does — a weighted blend
+// of affinity, popularity and freshness. The jitter term is the stand-in for
+// session-level personalization: it shifts scores a little every load.
+function scoreTrack(t: ScorableTrack, ctx: ScoreContext): number {
+  let score = 0;
+  const artistKey = t.artistId ?? `name:${t.artistName}`;
+  score += 10 * (ctx.artistAff.get(artistKey) ?? 0);
+  if (t.genreId) score += 4 * (ctx.genreAff.get(t.genreId) ?? 0);
+  score += 3 * (t.popularity / 100);
+  if (t.createdAt.getTime() >= ctx.freshCutoff) score += 8;
+  score += ctx.jitter * Math.random();
+  return score;
+}
+
+function rankTracks<T extends ScorableTrack>(
+  tracks: T[],
+  ctx: ScoreContext,
+  count: number
+): T[] {
+  return [...tracks].sort((a, b) => scoreTrack(b, ctx) - scoreTrack(a, ctx)).slice(0, count);
 }
 
 async function loadNewReleases(userId: string) {
