@@ -149,10 +149,28 @@ export default function YouTubePlayerHost() {
               if (d) store.setDuration(d);
               store.setStatus("ready");
             } catch {}
-            ev.target.setVolume(muted ? 0 : volume);
+            try {
+              if (muted || volume === 0) {
+                ev.target.mute?.();
+                ev.target.setVolume(0);
+              } else {
+                ev.target.unMute?.();
+                ev.target.setVolume(volume);
+              }
+            } catch {}
+            // Autoplay requires gesture — try muted first if needed
             if (usePlayerStore.getState().isPlaying) {
               try {
+                const st = getStore();
+                if (!st.muted && st.volume > 0) {
+                  try { ev.target.mute?.(); } catch {}
+                }
                 ev.target.playVideo();
+                if (!st.muted && st.volume > 0) {
+                  setTimeout(() => {
+                    try { ev.target.unMute?.(); ev.target.setVolume(st.volume); } catch {}
+                  }, 600);
+                }
               } catch {}
             }
           }) as unknown as (e: unknown) => void,
@@ -365,11 +383,11 @@ export default function YouTubePlayerHost() {
       id="geet-yt-host"
       aria-hidden
       style={{
-        position: "absolute",
-        left: -9999,
-        top: -9999,
-        width: 640,
-        height: 360,
+        position: "fixed",
+        left: 0,
+        bottom: 80,
+        width: 1,
+        height: 1,
         overflow: "hidden",
         pointerEvents: "none",
         opacity: 0.01,
