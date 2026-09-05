@@ -199,7 +199,9 @@ export default function YouTubePlayerHost() {
                 break;
             }
           }) as unknown as (e: unknown) => void,
-          onError: (() => {
+          onError: ((e: unknown) => {
+            const data = (e as { data?: number })?.data;
+            console.error("[GEET] YouTube player error", data, e);
             getStore().setStatus("error");
           }) as unknown as (e: unknown) => void,
         },

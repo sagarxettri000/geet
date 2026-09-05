@@ -40,9 +40,11 @@ export function PlayerBar() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
+  const status = usePlayerStore((s) => s.status);
 
   const effectiveDuration = duration || currentTrack?.durationSec || 0;
   const progressPct = effectiveDuration ? (currentTime / effectiveDuration) * 100 : 0;
+  const debugVideoId = currentTrack?.sources?.[0]?.providerVideoId ?? currentTrack?.thumbnailUrl?.match(/\/vi\/([^/]+)\//)?.[1] ?? "—";
 
   const handleLike = async () => {
     if (!currentTrack || likeLoading) return;
@@ -98,7 +100,9 @@ export function PlayerBar() {
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium leading-tight">{currentTrack.title}</p>
-              <p className="truncate text-xs text-muted">{currentTrack.artist}</p>
+              <p className="truncate text-xs text-muted">
+                {currentTrack.artist} · <span className="opacity-60">{status}</span> · <span className="font-mono text-[10px]">{debugVideoId.slice(0, 11)}</span>
+              </p>
             </div>
             <button
               onClick={handleLike}
