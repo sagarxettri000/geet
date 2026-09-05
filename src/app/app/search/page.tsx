@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import useSWR from "swr";
 import { Search, Play, Clock, X, Loader2 } from "lucide-react";
 import { usePlayerStore } from "@/stores/player";
-import { artworkFallback, formatDuration } from "@/lib/utils";
+import { artworkFallback, formatDuration, formatCount, timeAgo } from "@/lib/utils";
 import type { SearchResults, Track, YoutubeSearchHit } from "@/types/music";
 
 const fetcher = (url: string) => fetch(url).then((r) => {
@@ -73,6 +73,12 @@ export default function SearchPage() {
   }>(!debounced ? "/api/search/suggestions" : null, fetcher, {
     revalidateOnFocus: false,
   });
+
+  const { data: trending } = useSWR<{ region: string; hits: YoutubeSearchHit[] }>(
+    !debounced ? "/api/youtube/trending" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
 
   const importAndPlay = async (videoId: string) => {
     if (importingId) return;
@@ -179,6 +185,42 @@ export default function SearchPage() {
               </div>
             </div>
           )}
+          {trending && trending.hits.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 flex items-center justify-between">
+                <span>Trending on YouTube <span className="text-muted font-normal">· live · {trending.region}</span></span>
+              </h3>
+              <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-1 px-1">
+                {trending.hits.map((hit) => (
+                  <div key={hit.videoId} className="w-[220px] shrink-0">
+                    <button
+                      onClick={() => importAndPlay(hit.videoId)}
+                      disabled={importingId === hit.videoId}
+                      className="group w-full text-left"
+                    >
+                      <div className="relative aspect-video overflow-hidden rounded-lg bg-card">
+                        {hit.thumbnailUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={hit.thumbnailUrl} alt={hit.title} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                        ) : (
+                          <div className="h-full w-full" style={{ background: artworkFallback(hit.title) }} />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+                          {importingId === hit.videoId ? <Loader2 size={20} className="animate-spin text-white" /> : <Play size={16} className="text-white fill-white ml-0.5" />}
+                        </div>
+                        {hit.durationSec ? (
+                          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">{formatDuration(hit.durationSec)}</span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1.5 line-clamp-2 text-[13px] font-semibold leading-snug">{hit.title}</p>
+                      <p className="truncate text-[11px] text-muted">{hit.channelTitle} · {hit.viewCount != null ? formatCount(hit.viewCount) : ""}{hit.viewCount != null ? " views" : ""}</p>
+                      {hit.publishedAt ? <p className="text-[11px] text-muted/70">{timeAgo(hit.publishedAt)}</p> : null}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <h3 className="text-sm font-semibold mb-2">Genres</h3>
             <div className="flex flex-wrap gap-2">
@@ -225,6 +267,44 @@ export default function SearchPage() {
         </div>
       ) : data ? (
         <div ref={listRef} className="space-y-8">
+          {data.youtube && data.youtube.length > 0 && (
+            <section>
+              <h3 className="text-sm font-semibold mb-2">From YouTube <span className="text-muted font-normal">· search the whole of YouTube</span></h3>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {data.youtube.map((hit) => (
+                  <button
+                    key={hit.videoId}
+                    onClick={() => importAndPlay(hit.videoId)}
+                    disabled={importingId === hit.videoId}
+                    className="group rounded-xl border border-border bg-surface p-2 text-left hover:border-primary/50"
+                  >
+                    <div className="relative aspect-video overflow-hidden rounded-lg bg-card">
+                      {hit.thumbnailUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={hit.thumbnailUrl} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                      ) : (
+                        <div className="h-full w-full" style={{ background: artworkFallback(hit.title) }} />
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+                        {importingId === hit.videoId ? <Loader2 size={20} className="animate-spin text-white" /> : <Play size={16} className="text-white fill-white ml-0.5" />}
+                      </div>
+                      {hit.durationSec ? (
+                        <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">{formatDuration(hit.durationSec)}</span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 text-[13px] font-semibold leading-snug">{hit.title}</p>
+                    <p className="truncate text-[11px] text-muted">{hit.channelTitle}</p>
+                    <p className="text-[11px] text-muted/70">
+                      {hit.viewCount != null ? `${formatCount(hit.viewCount)} views` : ""}
+                      {hit.viewCount != null && hit.publishedAt ? " · " : ""}
+                      {hit.publishedAt ? timeAgo(hit.publishedAt) : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-muted/70">Tapping a result imports the video into GEET and plays it instantly.</p>
+            </section>
+          )}
           {(["tracks", "artists", "albums", "playlists"] as const).map((group) => {
             const items = (data as unknown as Record<string, unknown[]>)[group] as unknown[];
             if (!items?.length) return null;
@@ -303,8 +383,8 @@ export default function SearchPage() {
           })}
           {!data.tracks.length && !data.artists.length && !data.albums.length && !data.playlists.length && !data.genres.length && !data.youtube?.length && (
             <div className="py-10 text-center">
-              <p className="text-sm text-muted">No results for “{debounced}” in your catalog.</p>
-              <p className="mt-1 text-[11px] text-muted/70">Search covers the songs GEET has. Add the free YouTube Data API key (YOUTUBE_API_KEY) to search all of YouTube right here.</p>
+              <p className="text-sm text-muted">Nothing found for “{debounced}” on YouTube or in your catalog.</p>
+              <p className="mt-1 text-[11px] text-muted/70">Try a different spelling or artist name.</p>
             </div>
           )}
           {data.genres.length > 0 && (
@@ -321,43 +401,6 @@ export default function SearchPage() {
                   </button>
                 ))}
               </div>
-            </section>
-          )}
-          {data.youtube && data.youtube.length > 0 && (
-            <section>
-              <h3 className="text-sm font-semibold mb-2">From YouTube <span className="text-muted font-normal">· search the whole of YouTube</span></h3>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {data.youtube.map((hit) => (
-                  <button
-                    key={hit.videoId}
-                    onClick={() => importAndPlay(hit.videoId)}
-                    disabled={importingId === hit.videoId}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-surface p-2 text-left hover:border-primary/50"
-                  >
-                    <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md bg-card">
-                      {hit.thumbnailUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={hit.thumbnailUrl} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-muted"><Play size={14} /></div>
-                      )}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        {importingId === hit.videoId ? <Loader2 size={14} className="animate-spin text-white" /> : <Play size={14} className="text-white fill-white" />}
-                      </div>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{hit.title}</p>
-                      <p className="truncate text-[11px] text-muted">{hit.channelTitle}</p>
-                    </div>
-                    {hit.durationSec ? (
-                      <span className="shrink-0 rounded bg-black/40 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                        {formatDuration(hit.durationSec)}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-muted/70">Tapping a result imports the video into GEET and plays it.</p>
             </section>
           )}
         </div>

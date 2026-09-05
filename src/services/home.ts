@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
 import { trackToDTO } from "@/services/music";
+import { trendingYouTubeMusic } from "@/lib/youtube/data-api";
 import type { HomeSection } from "@/types/music";
 
 export async function buildHomeFeed(userId: string) {
-  const [hero, continueListening, recentlyPlayed, trending, madeForYou, releases, artists, albums, genres, mixes, likedTracksFeed, likes] =
+  const [hero, continueListening, recentlyPlayed, trending, madeForYou, releases, artists, albums, genres, mixes, likedTracksFeed, likes, youtubeTrending] =
     await Promise.all([
       loadHero(),
       loadContinueListening(userId),
@@ -20,6 +21,7 @@ export async function buildHomeFeed(userId: string) {
         where: { userId },
         select: { trackId: true },
       }),
+      loadYouTubeTrending(),
     ]);
 
   const likedSet = new Set(likes.map((l) => l.trackId));
@@ -47,6 +49,16 @@ export async function buildHomeFeed(userId: string) {
       title: "Made for you",
       subtitle: `Because you like ${madeForYou.genre ?? "great music"}`,
       items: madeForYou.tracks,
+    });
+  }
+
+  if (youtubeTrending.length > 0) {
+    const market = (process.env.YOUTUBE_REGION ?? "IN").toUpperCase();
+    sections.push({
+      key: "youtube-trending",
+      title: "Trending on YouTube",
+      subtitle: `The real YouTube music hit list · ${market}`,
+      items: youtubeTrending,
     });
   }
 
@@ -102,6 +114,16 @@ export async function buildHomeFeed(userId: string) {
   });
 
   return { hero, sections };
+}
+
+async function loadYouTubeTrending() {
+  const region = (process.env.YOUTUBE_REGION ?? "IN").toUpperCase().slice(0, 2);
+  try {
+    const hits = await trendingYouTubeMusic(region, 14);
+    return hits as unknown[];
+  } catch {
+    return [];
+  }
 }
 
 async function loadHero() {

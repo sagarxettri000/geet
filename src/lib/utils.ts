@@ -26,6 +26,16 @@ export function formatListeners(count: number): string {
   return count.toString();
 }
 
+export function formatCount(count: number | null | undefined): string {
+  if (count == null || Number.isNaN(count)) return "";
+  if (count >= 1_000_000_000)
+    return `${(count / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}B`;
+  if (count >= 1_000_000)
+    return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return count.toString();
+}
+
 export function timeAgo(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   const diff = Date.now() - d.getTime();

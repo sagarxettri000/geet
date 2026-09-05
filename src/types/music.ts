@@ -121,6 +121,8 @@ export interface YoutubeSearchHit {
   publishedAt: string;
   thumbnailUrl: string | null;
   durationSec: number | null;
+  viewCount?: number | null;
+  likeCount?: number | null;
 }
 
 export type RepeatMode = "off" | "all" | "one";

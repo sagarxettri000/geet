@@ -36,6 +36,40 @@ const videosResponseSchema = z.object({
   ),
 });
 
+const trendingResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string(),
+      snippet: z.object({
+        title: z.string(),
+        channelTitle: z.string(),
+        description: z.string().optional().nullable(),
+        publishedAt: z.string(),
+        thumbnails: z
+          .object({
+            maxres: z.object({ url: z.string().optional() }).optional(),
+            high: z.object({ url: z.string().optional() }).optional(),
+            medium: z.object({ url: z.string().optional() }).optional(),
+            default: z.object({ url: z.string().optional() }).optional(),
+          })
+          .catchall(z.unknown())
+          .optional()
+          .nullable(),
+      }),
+      contentDetails: z.object({
+        duration: z.string().optional().nullable(),
+      }),
+      statistics: z
+        .object({
+          viewCount: z.string().optional().nullable(),
+          likeCount: z.string().optional().nullable(),
+        })
+        .optional()
+        .nullable(),
+    })
+  ),
+});
+
 export interface YoutubeSearchHit {
   videoId: string;
   title: string;
@@ -44,6 +78,8 @@ export interface YoutubeSearchHit {
   publishedAt: string;
   thumbnailUrl: string | null;
   durationSec: number | null;
+  viewCount?: number | null;
+  likeCount?: number | null;
 }
 
 export class DataApiError extends Error {
@@ -94,24 +130,58 @@ export async function searchYouTubeMusic(query: string, maxResults = 20) {
   const durations = await fetchDurations(videoIds);
 
   const hits: YoutubeSearchHit[] = videos.map((it) => {
-    const thumb = it.snippet.thumbnails;
     return {
       videoId: it.id.videoId,
       title: it.snippet.title,
       channelTitle: it.snippet.channelTitle,
       description: it.snippet.description ?? null,
       publishedAt: it.snippet.publishedAt,
-      thumbnailUrl:
-        thumb?.maxres?.url ??
-        thumb?.high?.url ??
-        thumb?.medium?.url ??
-        thumb?.default?.url ??
-        null,
+      thumbnailUrl: pickThumbnail(it.snippet.thumbnails),
       durationSec: durations.get(it.id.videoId) ?? null,
     };
   });
 
   return hits;
+}
+
+function pickThumbnail(
+  thumbnails: z.infer<typeof searchResponseSchema>["items"][number]["snippet"]["thumbnails"]
+): string | null {
+  return (
+    thumbnails?.maxres?.url ??
+    thumbnails?.high?.url ??
+    thumbnails?.medium?.url ??
+    thumbnails?.default?.url ??
+    null
+  );
+}
+
+// Real YouTube Music chart — the actual most-popular music videos for a market.
+export async function trendingYouTubeMusic(
+  regionCode = "IN",
+  maxResults = 14
+): Promise<YoutubeSearchHit[]> {
+  const key = apiKey();
+  const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+  url.searchParams.set("part", "snippet,contentDetails,statistics");
+  url.searchParams.set("chart", "mostPopular");
+  url.searchParams.set("videoCategoryId", "10"); // Music
+  url.searchParams.set("regionCode", regionCode);
+  url.searchParams.set("maxResults", String(maxResults));
+  url.searchParams.set("key", key);
+
+  const items = await fetchJson(trendingResponseSchema, url);
+  return items.map((it) => ({
+    videoId: it.id,
+    title: it.snippet.title,
+    channelTitle: it.snippet.channelTitle,
+    description: it.snippet.description ?? null,
+    publishedAt: it.snippet.publishedAt,
+    thumbnailUrl: pickThumbnail(it.snippet.thumbnails),
+    durationSec: parseIsoDuration(it.contentDetails.duration ?? ""),
+    viewCount: it.statistics?.viewCount ? Number(it.statistics.viewCount) : null,
+    likeCount: it.statistics?.likeCount ? Number(it.statistics.likeCount) : null,
+  }));
 }
 
 async function fetchDurations(videoIds: string[]) {

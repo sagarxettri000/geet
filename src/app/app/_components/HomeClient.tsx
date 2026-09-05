@@ -1,10 +1,11 @@
 "use client";
 
-import { Play } from "lucide-react";
+import { useState } from "react";
+import { Play, Loader2 } from "lucide-react";
 import { TrackCard, ArtistCard } from "@/components/cards";
 import { usePlayerStore } from "@/stores/player";
-import { artworkFallback } from "@/lib/utils";
-import type { Track, Artist, Album, Genre, Mix } from "@/types/music";
+import { artworkFallback, formatDuration, formatCount, timeAgo } from "@/lib/utils";
+import type { Track, Artist, Album, Genre, Mix, YoutubeSearchHit } from "@/types/music";
 
 type Hero = {
   title: string;
@@ -115,6 +116,9 @@ function isGenre(x: unknown): x is Genre {
 function isMix(x: unknown): x is Mix {
   return !!x && typeof x === "object" && "tracks" in (x as Mix) && "subtitle" in (x as Mix);
 }
+function isYouTubeHit(x: unknown): x is YoutubeSearchHit {
+  return !!x && typeof x === "object" && "videoId" in (x as YoutubeSearchHit) && "channelTitle" in (x as YoutubeSearchHit);
+}
 
 function TrackCarouselItems({ items }: { items: unknown[] }) {
   const playTrack = usePlayerStore((s) => s.playTrack);
@@ -155,6 +159,26 @@ function TrackCarouselItems({ items }: { items: unknown[] }) {
 export default function HomeClient({ hero, sections }: { hero: Hero; sections: Section[] }) {
   const playTrack = usePlayerStore((s) => s.playTrack);
   const setQueue = usePlayerStore((s) => s.setQueue);
+  const [youtubeImporting, setYoutubeImporting] = useState<string | null>(null);
+
+  const importAndPlay = async (videoId: string) => {
+    if (youtubeImporting) return;
+    setYoutubeImporting(videoId);
+    try {
+      const res = await fetch("/api/youtube/intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: `https://youtu.be/${videoId}` }),
+      });
+      if (!res.ok) throw new Error("intake failed");
+      const dataJson = (await res.json()) as { track: Track };
+      if (dataJson?.track) usePlayerStore.getState().playTrack(dataJson.track);
+    } catch {
+      // ignore
+    } finally {
+      setYoutubeImporting(null);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -210,6 +234,59 @@ export default function HomeClient({ hero, sections }: { hero: Hero; sections: S
                   </div>
                 ))}
               </div>
+            </section>
+          );
+        }
+
+        if (key === "youtube-trending" && items.some(isYouTubeHit)) {
+          return (
+            <section key={key}>
+              <SectionHeader title={sec.title} subtitle={sec.subtitle} />
+              <Carousel>
+                {(items as YoutubeSearchHit[]).map((hit) => (
+                  <div key={hit.videoId} className="w-[240px] shrink-0 snap-start">
+                    <button
+                      onClick={() => importAndPlay(hit.videoId)}
+                      disabled={youtubeImporting === hit.videoId}
+                      className="group w-full rounded-xl text-left focus:outline-none"
+                    >
+                      <div className="relative aspect-video overflow-hidden rounded-xl bg-card">
+                        {hit.thumbnailUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={hit.thumbnailUrl}
+                            alt={hit.title}
+                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="h-full w-full" style={{ background: artworkFallback(hit.title) }} />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+                          {youtubeImporting === hit.videoId ? (
+                            <Loader2 size={22} className="animate-spin text-white" />
+                          ) : (
+                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white">
+                              <Play className="h-4 w-4 fill-current ml-0.5" />
+                            </span>
+                          )}
+                        </div>
+                        {hit.durationSec ? (
+                          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                            {formatDuration(hit.durationSec)}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-snug">{hit.title}</p>
+                      <p className="truncate text-xs text-muted">{hit.channelTitle}</p>
+                      <p className="text-[11px] text-muted/80">
+                        {hit.viewCount != null ? `${formatCount(hit.viewCount)} views` : ""}
+                        {hit.viewCount != null && hit.publishedAt ? " · " : ""}
+                        {hit.publishedAt ? timeAgo(hit.publishedAt) : ""}
+                      </p>
+                    </button>
+                  </div>
+                ))}
+              </Carousel>
             </section>
           );
         }
