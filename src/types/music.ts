@@ -110,6 +110,17 @@ export interface SearchResults {
   albums: Album[];
   playlists: Playlist[];
   genres: Genre[];
+  youtube?: YoutubeSearchHit[];
+}
+
+export interface YoutubeSearchHit {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  description: string | null;
+  publishedAt: string;
+  thumbnailUrl: string | null;
+  durationSec: number | null;
 }
 
 export type RepeatMode = "off" | "all" | "one";
