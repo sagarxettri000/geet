@@ -1,0 +1,183 @@
+import { z } from "zod";
+
+const searchResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.object({ videoId: z.string() }).catchall(z.unknown()),
+      snippet: z.object({
+        title: z.string(),
+        channelTitle: z.string(),
+        description: z.string().optional().nullable(),
+        publishedAt: z.string(),
+        thumbnails: z
+          .object({
+            maxres: z.object({ url: z.string() }).optional(),
+            high: z.object({ url: z.string() }).optional(),
+            medium: z.object({ url: z.string() }).optional(),
+            default: z.object({ url: z.string() }).optional(),
+          })
+          .optional()
+          .nullable(),
+      }),
+    })
+  ),
+  nextPageToken: z.string().optional().nullable(),
+});
+
+const videosResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string(),
+      contentDetails: z.object({ duration: z.string() }),
+    })
+  ),
+});
+
+export interface YoutubeSearchHit {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  description: string | null;
+  publishedAt: string;
+  thumbnailUrl: string | null;
+  durationSec: number | null;
+}
+
+export class DataApiError extends Error {
+  constructor(
+    message: string,
+    public readonly kind:
+      | "no-key"
+      | "quota"
+      | "rate-limit"
+      | "network"
+      | "invalid"
+      | "server"
+  ) {
+    super(message);
+    this.name = "DataApiError";
+  }
+}
+
+function apiKey(): string {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) {
+    throw new DataApiError(
+      "YouTube Data API key not configured",
+      "no-key"
+    );
+  }
+  return key;
+}
+
+const SEARCH_CATEGORY_IDS = ["10"]; // Music
+const REUSABLE_PARTS = "snippet";
+
+export async function searchYouTubeMusic(query: string, maxResults = 20) {
+  const key = apiKey();
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", REUSABLE_PARTS);
+  url.searchParams.set("type", "video");
+  url.searchParams.set("q", query);
+  url.searchParams.set("maxResults", String(maxResults));
+  url.searchParams.set("videoCategoryId", SEARCH_CATEGORY_IDS[0]);
+  url.searchParams.set("key", key);
+
+  const items = await fetchJson(searchResponseSchema, url);
+  if (items.length === 0) return [];
+
+  const videoIds = items.map((it) => it.id.videoId);
+  const durations = await fetchDurations(videoIds);
+
+  const hits: YoutubeSearchHit[] = items.map((it) => {
+    const thumb = it.snippet.thumbnails;
+    return {
+      videoId: it.id.videoId,
+      title: it.snippet.title,
+      channelTitle: it.snippet.channelTitle,
+      description: it.snippet.description ?? null,
+      publishedAt: it.snippet.publishedAt,
+      thumbnailUrl:
+        thumb?.maxres?.url ??
+        thumb?.high?.url ??
+        thumb?.medium?.url ??
+        thumb?.default?.url ??
+        null,
+      durationSec: durations.get(it.id.videoId) ?? null,
+    };
+  });
+
+  return hits;
+}
+
+async function fetchDurations(videoIds: string[]) {
+  const durations = new Map<string, number>();
+  const key = apiKey();
+
+  // videos.list accepts up to 50 IDs per request.
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const chunk = videoIds.slice(i, i + 50);
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("part", "contentDetails");
+    url.searchParams.set("id", chunk.join(","));
+    url.searchParams.set("key", key);
+
+    const items = await fetchJson(videosResponseSchema, url);
+    for (const item of items) {
+      durations.set(item.id, parseIsoDuration(item.contentDetails.duration));
+    }
+  }
+  return durations;
+}
+
+async function fetchJson<T extends { items: unknown[] }>(
+  schema: z.ZodType<T>,
+  url: URL
+): Promise<T["items"]> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new DataApiError("YouTube network failure", "network");
+  }
+
+  if (res.status === 403) {
+    const body = await safeJson(res);
+    const reason = (body?.error?.errors?.[0]?.reason ?? "") as string;
+    if (reason === "quotaExceeded") {
+      throw new DataApiError("Daily YouTube search quota exceeded", "quota");
+    }
+    if (reason === "dailyLimitExceeded") {
+      throw new DataApiError("Daily YouTube search limit reached", "quota");
+    }
+    throw new DataApiError("YouTube API access denied", "server");
+  }
+  if (res.status === 429) {
+    throw new DataApiError("YouTube is rate limiting requests", "rate-limit");
+  }
+  if (!res.ok) {
+    throw new DataApiError(`YouTube API error (${res.status})`, "server");
+  }
+
+  const parsed = schema.safeParse(await res.json());
+  if (!parsed.success) {
+    throw new DataApiError("Unexpected YouTube response", "invalid");
+  }
+  return parsed.data.items;
+}
+
+function safeJson(res: Response): Promise<Record<string, any> | null> {
+  return res.json().catch(() => null);
+}
+
+export function parseIsoDuration(input: string): number {
+  const match = input.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  const hours = parseInt(match[1] ?? "0", 10);
+  const minutes = parseInt(match[2] ?? "0", 10);
+  const seconds = parseInt(match[3] ?? "0", 10);
+  return hours * 3600 + minutes * 60 + seconds;
+}

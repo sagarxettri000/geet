@@ -1,0 +1,253 @@
+"use client";
+
+import { useState, useEffect, useRef, useMemo } from "react";
+import useSWR from "swr";
+import { Search, Play, Clock, X, Loader2 } from "lucide-react";
+import { usePlayerStore } from "@/stores/player";
+import { artworkFallback, formatDuration } from "@/lib/utils";
+import type { SearchResults, Track } from "@/types/music";
+
+const fetcher = (url: string) => fetch(url).then((r) => {
+  if (!r.ok) throw new Error("search failed");
+  return r.json();
+});
+
+const TRENDING = ["lofi", "arijit", "bollywood", "chill", "remix", "punjabi"];
+const RECENT_KEY = "geet:recent-searches";
+
+function useDebounced<T>(v: T, ms = 300) {
+  const [d, setD] = useState(v);
+  useEffect(() => {
+    const t = setTimeout(() => setD(v), ms);
+    return () => clearTimeout(t);
+  }, [v, ms]);
+  return d;
+}
+
+function SkeletonRow() {
+  return (
+    <div className="flex items-center gap-3 p-2">
+      <div className="h-12 w-12 shrink-0 rounded-md skeleton" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3 w-3/5 rounded skeleton" />
+        <div className="h-3 w-2/5 rounded skeleton" />
+      </div>
+    </div>
+  );
+}
+
+export default function SearchPage() {
+  const [query, setQuery] = useState("");
+  const debounced = useDebounced(query.trim(), 300);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [recent, setRecent] = useState<string[]>([]);
+  const [focusIdx, setFocusIdx] = useState(-1);
+
+  const playTrack = usePlayerStore((s) => s.playTrack);
+  const setQueue = usePlayerStore((s) => s.setQueue);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (raw) setRecent(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  const persistRecent = (q: string) => {
+    const next = [q, ...recent.filter((r) => r !== q)].slice(0, 8);
+    setRecent(next);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
+  };
+
+  const { data, isLoading, error } = useSWR<SearchResults>(
+    debounced ? `/api/search?q=${encodeURIComponent(debounced)}` : null,
+    fetcher,
+    { keepPreviousData: true, revalidateOnFocus: false }
+  );
+
+  const flatTracks: Track[] = useMemo(() => data?.tracks ?? [], [data]);
+
+  // keyboard nav over tracks
+  useEffect(() => {
+    if (!flatTracks.length) { setFocusIdx(-1); return; }
+    if (focusIdx >= flatTracks.length) setFocusIdx(flatTracks.length - 1);
+  }, [flatTracks, focusIdx]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!flatTracks.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusIdx((i) => Math.min(flatTracks.length - 1, i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusIdx((i) => Math.max(0, i - 1));
+    } else if (e.key === "Enter" && focusIdx >= 0) {
+      e.preventDefault();
+      const t = flatTracks[focusIdx];
+      if (t) { setQueue(flatTracks, focusIdx); persistRecent(debounced); }
+    }
+  };
+
+  const isEmpty = !debounced;
+
+  return (
+    <div className="space-y-6">
+      <div className="relative max-w-[640px]">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search songs, artists, albums, playlists"
+          className="h-11 w-full rounded-full border border-border bg-surface py-2 pl-10 pr-10 text-sm placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          autoFocus
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 hover:bg-surface"
+            aria-label="Clear"
+          >
+            <X className="h-4 w-4 text-muted" />
+          </button>
+        )}
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2 max-w-[640px]">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-danger">Failed to search. Try again.</p>}
+
+      {isEmpty ? (
+        <div className="space-y-6 max-w-[640px]">
+          {recent.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2"><Clock className="h-4 w-4 text-muted" /> Recent searches</h3>
+                <button
+                  onClick={() => { setRecent([]); try{localStorage.removeItem(RECENT_KEY);}catch{} }}
+                  className="text-xs text-muted hover:text-foreground"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {recent.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => setQuery(q)}
+                    className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm hover:bg-surface-elevated"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <h3 className="text-sm font-semibold mb-2">Trending searches</h3>
+            <div className="flex flex-wrap gap-2">
+              {TRENDING.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setQuery(t)}
+                  className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-muted">Tip: press ↑ ↓ then Enter to play from results.</p>
+        </div>
+      ) : data ? (
+        <div ref={listRef} className="space-y-8">
+          {(["tracks", "artists", "albums", "playlists"] as const).map((group) => {
+            const items = (data as unknown as Record<string, unknown[]>)[group] as unknown[];
+            if (!items?.length) return null;
+            const title = group[0].toUpperCase() + group.slice(1);
+            return (
+              <section key={group}>
+                <h3 className="text-sm font-semibold mb-2">{title} <span className="text-muted font-normal">· {items.length}</span></h3>
+                {group === "tracks" ? (
+                  <div className="divide-y divide-border/50 rounded-2xl border border-border bg-surface overflow-hidden">
+                    {(items as Track[]).map((t, idx) => {
+                      const active = idx === focusIdx;
+                      return (
+                        <button
+                          key={(t.id ?? t.title) + idx}
+                          onClick={() => { setQueue(flatTracks, idx); persistRecent(debounced); }}
+                          className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-elevated transition-colors ${active ? "bg-primary-soft ring-1 ring-primary/30" : ""}`}
+                        >
+                          {t.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={t.thumbnailUrl} alt="" className="h-11 w-11 rounded-md object-cover shrink-0" />
+                          ) : (
+                            <div className="h-11 w-11 shrink-0 rounded-md" style={{ background: artworkFallback(t.title) }} />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">{t.title}</span>
+                            <span className="block truncate text-xs text-muted">{t.artist} · {formatDuration(t.durationSec)}</span>
+                          </span>
+                          <span className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : group === "artists" ? (
+                  <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                    {items.map((a: unknown) => {
+                      const art = a as { id: string; name: string; imageUrl: string | null; verified?: boolean };
+                      return (
+                        <div key={art.id} className="shrink-0 w-28 rounded-2xl bg-surface p-3 text-center">
+                          <div className="mx-auto h-16 w-16 overflow-hidden rounded-full bg-card">
+                            {art.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={art.imageUrl} alt={art.name} className="h-full w-full object-cover" />
+                            ) : <div className="h-full w-full" style={{ background: artworkFallback(art.name) }} /> }
+                          </div>
+                          <p className="mt-2 truncate text-xs font-semibold">{art.name}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : group === "albums" ? (
+                  <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                    {(items as { id:string; title:string; artist:string; coverUrl:string|null }[]).map((al) => (
+                      <div key={al.id} className="shrink-0 w-36 rounded-xl bg-surface p-2">
+                        <div className="aspect-square rounded-lg bg-card overflow-hidden">
+                          {al.coverUrl ? <img src={al.coverUrl} alt={al.title} className="h-full w-full object-cover" /> : <div className="h-full w-full" style={{ background: artworkFallback(al.title) }} />}
+                        </div>
+                        <p className="mt-1.5 truncate text-xs font-semibold">{al.title}</p>
+                        <p className="truncate text-[11px] text-muted">{al.artist}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(items as { id:string; name:string; description:string|null; trackCount:number }[]).map((pl) => (
+                      <div key={pl.id} className="rounded-xl border border-border bg-surface px-3 py-3">
+                        <p className="truncate text-sm font-semibold">{pl.name}</p>
+                        <p className="truncate text-xs text-muted">{pl.trackCount} tracks{pl.description ? ` · ${pl.description.slice(0,40)}` : ""}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+          {!data.tracks.length && !data.artists.length && !data.albums.length && !data.playlists.length && (
+            <p className="text-sm text-muted py-10 text-center">No results for “{debounced}”.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
