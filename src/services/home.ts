@@ -146,6 +146,8 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   if (history.length === 0) return [];
 
   const listened = new Set(history.map((h) => h.track.id));
+  const listenedArtists = new Set<string>();
+  const listenedGenres = new Set<string>();
   const artistCounts = new Map<string, { count: number; id: string | null; name: string }>();
   const genreCounts = new Map<string, number>();
 
@@ -153,6 +155,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     const t = h.track;
     if (t.artistId || t.artistName) {
       const key = t.artistId ?? `name:${t.artistName}`;
+      if (t.artistId) listenedArtists.add(t.artistId);
       const cur = artistCounts.get(key);
       artistCounts.set(key, {
         count: (cur?.count ?? 0) + 1,
@@ -160,7 +163,10 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
         name: t.artistName,
       });
     }
-    if (t.genreId) genreCounts.set(t.genreId, (genreCounts.get(t.genreId) ?? 0) + 1);
+    if (t.genreId) {
+      listenedGenres.add(t.genreId);
+      genreCounts.set(t.genreId, (genreCounts.get(t.genreId) ?? 0) + 1);
+    }
   }
 
   const genreNames =
@@ -172,21 +178,21 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   const liked = await db.likedTrack.findMany({ where: { userId }, select: { trackId: true } });
   const likedSet = new Set(liked.map((l) => l.trackId));
 
-  // "Because you listened to {artist}" — lead artist rotates so the home row
-  // stays fresh between visits, like YouTube's rec row.
-  const topArtists = [...artistCounts.values()].sort((a, b) => b.count - a.count);
-  const offset = topArtists.length > 1 ? Math.floor(Math.random() * Math.min(topArtists.length, 3)) : 0;
-  const rotated = [...topArtists.slice(offset), ...topArtists.slice(0, offset)];
+  // Every visit pulls a fresh hand of top artists and genres and shuffles the
+  // pools, so the rows never show the same songs twice in a row.
+  const topArtists = shuffle(
+    [...artistCounts.values()].sort((a, b) => b.count - a.count).slice(0, 12)
+  );
 
   const rows: RecommendationRow[] = [];
-  for (const artist of rotated.slice(0, 3)) {
-    if (rows.length >= 4) break;
+  for (const artist of topArtists) {
+    if (rows.length >= 3) break;
     const where = artist.id ? { artistId: artist.id } : { artistName: artist.name };
     const all = await db.track.findMany({
       where,
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
-      take: 20,
+      take: 40,
     });
     const pools = pickForRow(all, listened);
     if (pools.length === 0) continue;
@@ -199,16 +205,15 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   }
 
   // Genre rows — "More {genre}" from what you actually play.
-  const sortedGenres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1]);
-  for (const [genreId] of sortedGenres) {
-    if (rows.length >= 4) break;
+  for (const [genreId] of shuffle([...genreCounts.entries()])) {
+    if (rows.length >= 3) break;
     const name = genreNameMap.get(genreId);
     if (!name) continue;
     const all = await db.track.findMany({
       where: { genreId },
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
-      take: 20,
+      take: 40,
     });
     const pools = pickForRow(all, listened);
     if (pools.length === 0) continue;
@@ -220,14 +225,39 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
+  // "Discover" rows — artists you haven't listened to yet, so the feed is
+  // always suggesting something new rather than looping the same favourites.
+  const freshArtists = await db.artist.findMany({
+    where: listenedArtists.size ? { id: { notIn: [...listenedArtists] } } : undefined,
+    orderBy: { monthlyListeners: "desc" },
+    take: 24,
+  });
+  for (const artist of shuffle(freshArtists)) {
+    if (rows.length >= 4) break;
+    const all = await db.track.findMany({
+      where: { artistId: artist.id },
+      include: { sources: true },
+      orderBy: [{ popularity: "desc" }],
+      take: 24,
+    });
+    const pools = shuffle(all.filter((t) => t.sources.length > 0)).slice(0, 12);
+    if (pools.length === 0) continue;
+    rows.push({
+      key: `discover-artist-${artist.id}`,
+      title: `Discover ${artist.name}`,
+      subtitle: "New to your ears",
+      items: pools.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
+    });
+  }
+
   return rows.slice(0, 4);
 }
 
 // Whole tracks you haven't played yet first, then the already-heard ones —
-// exactly how YouTube fronts up unseen videos from a creator you like.
+// shuffled each load so the row content is fresh every visit.
 function pickForRow<T extends { id: string }>(all: T[], listened: Set<string>): T[] {
-  const unseen = all.filter((t) => !listened.has(t.id));
-  const heard = all.filter((t) => listened.has(t.id));
+  const unseen = shuffle(all.filter((t) => !listened.has(t.id)));
+  const heard = shuffle(all.filter((t) => listened.has(t.id)));
   return [...unseen, ...heard].slice(0, 12);
 }
 
