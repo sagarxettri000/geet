@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Menu, Search, Link2, LogOut, User, ChevronDown } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { useToast } from "@/components/ui/toast";
+import { usePlayerStore } from "@/stores/player";
 import { cn } from "@/lib/utils";
 
 export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
@@ -50,8 +51,15 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to import");
-      toast(data.message ?? "Added to library");
+      const track = data.track;
+      if (track) {
+        usePlayerStore.getState().playTrack(track);
+        toast(`Playing: ${track.title} — ${track.artist}`);
+      } else {
+        toast(data.message ?? "Added to library");
+      }
       setYtUrl("");
+      router.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to import YouTube link");
     } finally {

@@ -18,10 +18,7 @@ export async function artistForName(name: string) {
   });
   if (existing) return existing;
 
-  const color = await db.$queryRawUnsafe<{ seed: number }[]>(
-    "SELECT ABS(random()) % 10 AS seed"
-  );
-  const seed = color[0]?.seed ?? 0;
+  const seed = Math.floor(Math.random() * 10);
   const palette = [
     "#f97316", "#ef4444", "#f59e0b", "#84cc16", "#10b981",
     "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef", "#ec4899",
