@@ -5,14 +5,7 @@ import { Play, Loader2 } from "lucide-react";
 import { TrackCard, ArtistCard } from "@/components/cards";
 import { usePlayerStore } from "@/stores/player";
 import { artworkFallback, formatDuration, formatCount, timeAgo } from "@/lib/utils";
-import type { Track, Artist, Album, Genre, Mix, YoutubeSearchHit } from "@/types/music";
-
-type Hero = {
-  title: string;
-  description: string;
-  track: Track | null;
-  cta: string;
-};
+import type { Track, Artist, Album, Genre, YoutubeSearchHit } from "@/types/music";
 
 type Section = {
   key: string;
@@ -20,67 +13,6 @@ type Section = {
   subtitle?: string;
   items: unknown[];
 };
-
-function HeroCard({ hero }: { hero: Hero }) {
-  const playTrack = usePlayerStore((s) => s.playTrack);
-  const setQueue = usePlayerStore((s) => s.setQueue);
-  const t = hero.track;
-
-  return (
-    <div className="relative overflow-hidden rounded-[28px] border border-border glass p-6 md:p-8">
-      {/* amber accent glow */}
-      <div
-        className="pointer-events-none absolute -right-32 -top-32 h-72 w-72 rounded-full opacity-20 blur-3xl"
-        style={{ background: "radial-gradient(circle at center, #FFB454 0%, transparent 70%)" }}
-      />
-      <div
-        className="pointer-events-none absolute -left-20 -bottom-20 h-64 w-64 rounded-full opacity-10 blur-3xl"
-        style={{ background: "radial-gradient(circle at center, #FFB454 0%, transparent 70%)" }}
-      />
-      <div className="relative flex flex-col gap-6 md:flex-row md:items-center">
-        <div className="flex-1 space-y-3">
-          <span className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold tracking-wide text-primary">
-            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" /> Featured
-          </span>
-          <h1 className="font-display text-2xl font-bold leading-tight md:text-3xl text-balance">
-            {hero.title}
-          </h1>
-          <p className="text-sm text-muted max-w-prose">{hero.description}</p>
-          {t && (
-            <button
-              onClick={() => (t.sources?.length ? playTrack(t) : setQueue([t], 0))}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow"
-            >
-              <Play className="h-4 w-4 fill-current" />
-              {hero.cta}
-            </button>
-          )}
-        </div>
-        {t && (
-          <div className="shrink-0 w-full md:w-[280px]">
-            <div className="relative aspect-square overflow-hidden rounded-2xl bg-card shadow-card">
-              {t.thumbnailUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={t.thumbnailUrl} alt={t.title} className="h-full w-full object-cover" />
-              ) : (
-                <div className="h-full w-full" style={{ background: artworkFallback(t.title) }} />
-              )}
-              <button
-                onClick={() => playTrack(t)}
-                className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition-transform"
-                aria-label={`Play ${t.title}`}
-              >
-                <Play className="h-5 w-5 fill-current ml-0.5" />
-              </button>
-            </div>
-            <p className="mt-3 truncate text-sm font-semibold">{t.title}</p>
-            <p className="truncate text-xs text-muted">{t.artist}</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
@@ -113,15 +45,11 @@ function isAlbum(x: unknown): x is Album {
 function isGenre(x: unknown): x is Genre {
   return !!x && typeof x === "object" && "slug" in (x as Genre);
 }
-function isMix(x: unknown): x is Mix {
-  return !!x && typeof x === "object" && "tracks" in (x as Mix) && "subtitle" in (x as Mix);
-}
 function isYouTubeHit(x: unknown): x is YoutubeSearchHit {
   return !!x && typeof x === "object" && "videoId" in (x as YoutubeSearchHit) && "channelTitle" in (x as YoutubeSearchHit);
 }
 
 function TrackCarouselItems({ items }: { items: unknown[] }) {
-  const playTrack = usePlayerStore((s) => s.playTrack);
   const setQueue = usePlayerStore((s) => s.setQueue);
   // unwrap cases where item is { track: Track } (continue-listening / recently-played)
   const tracks: Track[] = items
@@ -156,9 +84,7 @@ function TrackCarouselItems({ items }: { items: unknown[] }) {
   );
 }
 
-export default function HomeClient({ hero, sections }: { hero: Hero; sections: Section[] }) {
-  const playTrack = usePlayerStore((s) => s.playTrack);
-  const setQueue = usePlayerStore((s) => s.setQueue);
+export default function HomeClient({ sections }: { sections: Section[] }) {
   const [youtubeImporting, setYoutubeImporting] = useState<string | null>(null);
 
   const importAndPlay = async (videoId: string) => {
@@ -182,61 +108,10 @@ export default function HomeClient({ hero, sections }: { hero: Hero; sections: S
 
   return (
     <div className="space-y-8">
-      <HeroCard hero={hero} />
-
       {sections.map((sec) => {
         const key = sec.key;
         const items = sec.items;
         if (!items?.length) return null;
-
-        // mixes: items are Mix[]
-        if (key === "mixes" && items.some(isMix)) {
-          return (
-            <section key={key}>
-              <SectionHeader title={sec.title} subtitle={sec.subtitle} />
-              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-                {(items as Mix[]).map((mix, idx) => (
-                  <div
-                    key={mix.title + idx}
-                    className="shrink-0 w-[300px] rounded-2xl border border-border bg-surface p-4 hover:bg-surface-elevated transition-colors"
-                  >
-                    <div
-                      className="h-2 w-10 rounded-full mb-3"
-                      style={{ background: mix.color ?? "#FFB454" }}
-                    />
-                    <h3 className="font-semibold text-sm">{mix.title}</h3>
-                    <p className="text-xs text-muted truncate">{mix.subtitle}</p>
-                    <div className="mt-3 flex -space-x-2">
-                      {mix.tracks.slice(0, 4).map((t, i) =>
-                        t.thumbnailUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            key={t.id ?? i}
-                            src={t.thumbnailUrl}
-                            alt=""
-                            className="h-9 w-9 rounded-full border-2 border-surface object-cover"
-                          />
-                        ) : (
-                          <div
-                            key={t.id ?? i}
-                            className="h-9 w-9 rounded-full border-2 border-surface"
-                            style={{ background: artworkFallback(t.title) }}
-                          />
-                        )
-                      )}
-                    </div>
-                    <button
-                      onClick={() => mix.tracks.length && setQueue(mix.tracks, 0)}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-                    >
-                      <Play className="h-3.5 w-3.5 fill-current" /> Play mix
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          );
-        }
 
         if (key === "youtube-trending" && items.some(isYouTubeHit)) {
           return (

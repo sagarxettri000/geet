@@ -4,27 +4,20 @@ import { trendingYouTubeMusic } from "@/lib/youtube/data-api";
 import type { HomeSection } from "@/types/music";
 
 export async function buildHomeFeed(userId: string) {
-  const [hero, continueListening, recentlyPlayed, trending, madeForYou, releases, artists, albums, genres, mixes, likedTracksFeed, likes, youtubeTrending] =
+  const [continueListening, recentlyPlayed, trending, youtubeTrending, releases, artists, albums, genres, likedTracksFeed, recommendations] =
     await Promise.all([
-      loadHero(),
       loadContinueListening(userId),
       loadRecentlyPlayed(userId),
       loadTrending(userId),
-      loadMadeForYou(userId),
+      loadYouTubeTrending(),
       loadNewReleases(userId),
       loadTopArtists(userId),
       loadTopAlbums(),
       loadGenres(userId),
-      loadMixes(userId),
       loadLikedTracks(userId),
-      db.likedTrack.findMany({
-        where: { userId },
-        select: { trackId: true },
-      }),
-      loadYouTubeTrending(),
+      loadRecommendations(userId),
     ]);
 
-  const likedSet = new Set(likes.map((l) => l.trackId));
   const sections: HomeSection<unknown>[] = [];
 
   if (continueListening.length > 0) {
@@ -43,12 +36,13 @@ export async function buildHomeFeed(userId: string) {
     items: recentlyPlayed,
   });
 
-  if (madeForYou.tracks.length > 0) {
+  // YouTube-style rows: based on who/what you actually listen to.
+  for (const rec of recommendations) {
     sections.push({
-      key: "made-for-you",
-      title: "Made for you",
-      subtitle: `Because you like ${madeForYou.genre ?? "great music"}`,
-      items: madeForYou.tracks,
+      key: rec.key,
+      title: rec.title,
+      subtitle: rec.subtitle,
+      items: rec.items,
     });
   }
 
@@ -67,13 +61,6 @@ export async function buildHomeFeed(userId: string) {
     title: "Trending now",
     subtitle: "The hottest tracks in GEET",
     items: trending,
-  });
-
-  sections.push({
-    key: "mixes",
-    title: "Today's mixes",
-    subtitle: "Endless vibes, tuned for you",
-    items: mixes,
   });
 
   sections.push({
@@ -113,7 +100,7 @@ export async function buildHomeFeed(userId: string) {
     items: genres,
   });
 
-  return { hero, sections };
+  return { sections };
 }
 
 async function loadYouTubeTrending() {
@@ -124,49 +111,6 @@ async function loadYouTubeTrending() {
   } catch {
     return [];
   }
-}
-
-async function loadHero() {
-  const featured = await db.featuredContent.findFirst({
-    where: { active: true },
-    include: {
-      track: { include: { sources: true } },
-      artist: true,
-      album: true,
-      playlist: true,
-    },
-    orderBy: { position: "asc" },
-  });
-
-  if (featured?.track) {
-    return {
-      type: "track" as const,
-      title: featured.title ?? featured.track.title,
-      description: featured.subtitle ?? `Play ${featured.track.title} by ${featured.track.artistName}`,
-      track: trackToDTO(featured.track),
-      elementId: featured.track.id,
-      cta: "Play now",
-    };
-  }
-
-  const featuredTrack = await db.track.findFirst({
-    where: {},
-    include: { sources: true },
-    orderBy: { popularity: "desc" },
-  });
-
-  return {
-    type: "track" as const,
-    title: featuredTrack
-      ? featuredTrack.title
-      : "Where great music finds you",
-    description: featuredTrack
-      ? `By ${featuredTrack.artistName} · trending in GEET`
-      : "Paste any YouTube link. Build a library that's truly yours.",
-    track: featuredTrack ? trackToDTO(featuredTrack) : null,
-    elementId: featuredTrack?.id ?? null,
-    cta: "Play now",
-  };
 }
 
 async function loadContinueListening(userId: string) {
@@ -216,36 +160,108 @@ async function loadTrending(userId: string) {
   return attachLikes(tracks, userId);
 }
 
-async function loadMadeForYou(userId: string) {
-  const listened = await db.listeningHistory.findMany({
+interface RecommendationRow {
+  key: string;
+  title: string;
+  subtitle: string;
+  items: unknown[];
+}
+
+async function loadRecommendations(userId: string): Promise<RecommendationRow[]> {
+  const history = await db.listeningHistory.findMany({
     where: { userId },
-    include: { track: { select: { genreId: true } } },
+    include: {
+      track: { select: { id: true, artistId: true, artistName: true, genreId: true } },
+    },
     orderBy: { playedAt: "desc" },
-    take: 20,
+    take: 100,
   });
-  const genreCount = new Map<string, number>();
-  for (const row of listened) {
-    if (row.track.genreId) {
-      genreCount.set(row.track.genreId, (genreCount.get(row.track.genreId) ?? 0) + 1);
+  if (history.length === 0) return [];
+
+  const listened = new Set(history.map((h) => h.track.id));
+  const artistCounts = new Map<string, { count: number; id: string | null; name: string }>();
+  const genreCounts = new Map<string, number>();
+
+  for (const h of history) {
+    const t = h.track;
+    if (t.artistId || t.artistName) {
+      const key = t.artistId ?? `name:${t.artistName}`;
+      const cur = artistCounts.get(key);
+      artistCounts.set(key, {
+        count: (cur?.count ?? 0) + 1,
+        id: t.artistId,
+        name: t.artistName,
+      });
     }
+    if (t.genreId) genreCounts.set(t.genreId, (genreCounts.get(t.genreId) ?? 0) + 1);
   }
-  const topGenreId = [...genreCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
-  if (!topGenreId) return { tracks: [], genre: null };
+  const genreNames =
+    genreCounts.size > 0
+      ? await db.genre.findMany({ where: { id: { in: [...genreCounts.keys()] } } })
+      : [];
+  const genreNameMap = new Map(genreNames.map((g) => [g.id, g.name]));
 
-  const tracks = await db.track.findMany({
-    where: { genreId: topGenreId },
-    include: { sources: true },
-    orderBy: [{ popularity: "desc" }],
-    take: 20,
-  });
-  const genre = await db.genre.findUnique({ where: { id: topGenreId } });
   const liked = await db.likedTrack.findMany({ where: { userId }, select: { trackId: true } });
   const likedSet = new Set(liked.map((l) => l.trackId));
-  return {
-    genre: genre?.name ?? "great music",
-    tracks: tracks.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
-  };
+
+  // "Because you listened to {artist}" — lead artist rotates so the home row
+  // stays fresh between visits, like YouTube's rec row.
+  const topArtists = [...artistCounts.values()].sort((a, b) => b.count - a.count);
+  const offset = topArtists.length > 1 ? Math.floor(Math.random() * Math.min(topArtists.length, 3)) : 0;
+  const rotated = [...topArtists.slice(offset), ...topArtists.slice(0, offset)];
+
+  const rows: RecommendationRow[] = [];
+  for (const artist of rotated.slice(0, 3)) {
+    if (rows.length >= 4) break;
+    const where = artist.id ? { artistId: artist.id } : { artistName: artist.name };
+    const all = await db.track.findMany({
+      where,
+      include: { sources: true },
+      orderBy: [{ popularity: "desc" }],
+      take: 20,
+    });
+    const pools = pickForRow(all, listened);
+    if (pools.length === 0) continue;
+    rows.push({
+      key: `because-artist-${artist.id ?? artist.name}`,
+      title: `More from ${artist.name}`,
+      subtitle: `Because you've been listening to ${artist.name}`,
+      items: pools.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
+    });
+  }
+
+  // Genre rows — "More {genre}" from what you actually play.
+  const sortedGenres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [genreId] of sortedGenres) {
+    if (rows.length >= 4) break;
+    const name = genreNameMap.get(genreId);
+    if (!name) continue;
+    const all = await db.track.findMany({
+      where: { genreId },
+      include: { sources: true },
+      orderBy: [{ popularity: "desc" }],
+      take: 20,
+    });
+    const pools = pickForRow(all, listened);
+    if (pools.length === 0) continue;
+    rows.push({
+      key: `because-genre-${genreId}`,
+      title: `More ${name}`,
+      subtitle: `Based on your ${name} listening`,
+      items: pools.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
+    });
+  }
+
+  return rows.slice(0, 4);
+}
+
+// Whole tracks you haven't played yet first, then the already-heard ones —
+// exactly how YouTube fronts up unseen videos from a creator you like.
+function pickForRow<T extends { id: string }>(all: T[], listened: Set<string>): T[] {
+  const unseen = all.filter((t) => !listened.has(t.id));
+  const heard = all.filter((t) => listened.has(t.id));
+  return [...unseen, ...heard].slice(0, 12);
 }
 
 async function loadNewReleases(userId: string) {
@@ -309,12 +325,6 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function rotationSeed(userId: string): number {
-  let h = 0;
-  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0;
-  return h;
-}
-
 async function loadGenres(userId: string) {
   const genres = await db.genre.findMany({
     include: { _count: { select: { tracks: true } } },
@@ -328,62 +338,6 @@ async function loadGenres(userId: string) {
     thumbnailColor: g.thumbnailColor,
     trackCount: g._count.tracks,
   }));
-}
-
-async function loadMixes(userId: string) {
-  const listened = await db.listeningHistory.findMany({
-    where: { userId },
-    include: { track: { select: { genreId: true } } },
-    orderBy: { playedAt: "desc" },
-    take: 30,
-  });
-
-  const genreCount = new Map<string, number>();
-  for (const row of listened) {
-    if (row.track.genreId) {
-      genreCount.set(row.track.genreId, (genreCount.get(row.track.genreId) ?? 0) + 1);
-    }
-  }
-  const topGenres = [...genreCount.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => id);
-
-  const seed = rotationSeed(userId) + Math.floor(Math.random() * 1_000_000);
-  const allGenres = await db.genre.findMany({ select: { id: true } });
-  const allIds = allGenres.map((g) => g.id);
-  if (allIds.length === 0) return [];
-
-  // Rotate so each visit suggests a fresh pairing: usually one from your history,
-  // plus one genre you haven't really listened to (a "new genre" suggestion).
-  const pool = topGenres.length > 0 ? topGenres : allIds;
-  const first = pool[seed % pool.length];
-  const fresh = allIds.filter((id) => id !== first && !topGenres.includes(id));
-  const second = fresh.length > 0 ? fresh[seed % fresh.length] : allIds[(seed + 1) % allIds.length];
-
-  const mixSources = [first, second].filter((id, i, arr) => id && arr.indexOf(id) === i).slice(0, 2);
-  const colors = ["#FFB454", "#32CD7A", "#4C8BF5", "#F14C45"];
-
-  const likedCache = await db.likedTrack.findMany({ where: { userId }, select: { trackId: true } });
-  const likedSet = new Set(likedCache.map((l) => l.trackId));
-
-  const mixes = await Promise.all(
-    mixSources.map(async (genreId, i) => {
-      const genre = await db.genre.findUnique({ where: { id: genreId } });
-      const tracks = await db.track.findMany({
-        where: { genreId },
-        include: { sources: true },
-        orderBy: { popularity: "desc" },
-        take: 12,
-      });
-      return {
-        title: `${genre?.name ?? "Daily"} Mix ${i + 1}`,
-        subtitle: `${genre?.name ?? "Tuned"}: ${tracks.length} tracks · made for you`,
-        color: colors[i % colors.length],
-        tracks: tracks.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
-      };
-    })
-  );
-  return mixes;
 }
 
 async function loadLikedTracks(userId: string) {
