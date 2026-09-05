@@ -83,7 +83,7 @@ export async function buildHomeFeed(userId: string) {
     items: releases,
   });
 
-  if (likedTracksFeed.length >= 3) {
+  if (likedTracksFeed.length > 0) {
     sections.push({
       key: "liked",
       title: "Your liked songs",

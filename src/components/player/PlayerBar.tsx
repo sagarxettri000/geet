@@ -13,7 +13,6 @@ import {
   VolumeX,
   Heart,
   ListMusic,
-  RotateCcw,
 } from "lucide-react";
 import { usePlayerStore } from "@/stores/player";
 import { formatDuration, artworkFallback } from "@/lib/utils";
@@ -39,15 +38,13 @@ export function PlayerBar() {
   const setRepeat = usePlayerStore((s) => s.setRepeat);
 
   const [queueOpen, setQueueOpen] = useState(false);
-  const [liked, setLiked] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
-  const status = usePlayerStore((s) => s.status);
-  const debugInfo = usePlayerStore((s) => s.debugInfo);
-  const requestPlayerReload = usePlayerStore((s) => s.requestPlayerReload);
+
+  // heart state is derived from the playing track's like state in the store
+  const liked = !!currentTrack?.isLiked;
 
   const effectiveDuration = duration || currentTrack?.durationSec || 0;
   const progressPct = effectiveDuration ? (currentTime / effectiveDuration) * 100 : 0;
-  const debugVideoId = currentTrack?.sources?.[0]?.providerVideoId ?? currentTrack?.thumbnailUrl?.match(/\/vi\/([^/]+)\//)?.[1] ?? "—";
 
   const handleLike = async () => {
     if (!currentTrack || likeLoading) return;
@@ -58,7 +55,7 @@ export function PlayerBar() {
       const res = await fetch(`/api/tracks/${trackId}/like`, {
         method: "POST",
       });
-      if (res.ok) setLiked((v) => !v);
+      if (res.ok) usePlayerStore.getState().setTrackLiked(!liked);
     } catch {
       // ignore
     } finally {
@@ -104,9 +101,7 @@ export function PlayerBar() {
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium leading-tight">{currentTrack.title}</p>
-              <p className="truncate text-xs text-muted">
-                {currentTrack.artist} · <span className="opacity-60">{status}</span> · <span className="font-mono text-[10px]">{debugVideoId.slice(0, 11)}</span>
-              </p>
+              <p className="truncate text-xs text-muted">{currentTrack.artist}</p>
             </div>
             <button
               onClick={handleLike}
@@ -147,7 +142,7 @@ export function PlayerBar() {
                 {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
               </button>
               <button
-                onClick={next}
+                onClick={() => next()}
                 aria-label="Next"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full text-foreground hover:bg-surface transition-colors"
               >
@@ -222,22 +217,7 @@ export function PlayerBar() {
             >
               <ListMusic className="h-4 w-4" />
             </button>
-            <button
-              onClick={requestPlayerReload}
-              aria-label="Restart player"
-              title="Restart player"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted hover:text-foreground hover:bg-surface transition-colors"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
           </div>
-        </div>
-
-        {/* debug line */}
-        <div className="flex items-center gap-2 overflow-hidden px-3 pb-1 text-[10px] tabular-nums text-muted/60">
-          <span className="shrink-0 font-mono">{debugVideoId.slice(0, 11)}</span>
-          <span className="shrink-0">{status}</span>
-          <span className="truncate font-mono">{debugInfo || "…"}</span>
         </div>
 
         {/* mobile progress slider */}

@@ -299,7 +299,7 @@ export default function YouTubePlayerHost() {
                 case YTState.ENDED:
                   store.setStatus("ended");
                   debug("ended");
-                  store.next();
+                  store.next({ auto: true });
                   break;
                 case YTState.UNSTARTED:
                   store.setStatus("unstarted");

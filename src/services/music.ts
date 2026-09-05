@@ -6,8 +6,6 @@ import type {
   Track,
 } from "@prisma/client";
 import { db } from "@/lib/db";
-import { fetchOEmbed, OEmbedError } from "@/lib/youtube/oembed";
-import { artistForName, getOrCreateTrackFromVideo } from "@/services/catalog";
 
 export function trackToDTO(
   track: Track & { sources?: Array<{ provider: string; providerVideoId: string; thumbnailUrl: string | null }> },
@@ -103,35 +101,6 @@ export function genreToDTO(genre: Genre) {
   };
 }
 
-/** Resolve a YouTube video into a persisted track DTO (upserts if needed). */
-export async function intakeTrackFromYoutube(
-  videoId: string
-): Promise<{ track: ReturnType<typeof trackToDTO>; created: boolean }> {
-  let meta;
-  try {
-    meta = await fetchOEmbed(videoId);
-  } catch (err) {
-    const kind =
-      err instanceof OEmbedError ? err.kind : "network";
-    return Promise.reject(
-      new Error(
-        kind === "not-found"
-          ? "This video isn't available."
-          : "Couldn't load that video's details. Check the link and try again."
-      )
-    );
-  }
-
-  const { track, created } = await getOrCreateTrackFromVideo({
-    videoId,
-    title: meta.title,
-    artist: meta.authorName,
-    thumbnailUrl: meta.thumbnailUrl,
-    durationSec: null,
-  });
-  return { track: trackToDTO(track), created };
-}
-
 /** Merged catalog search across tracks, artists, albums, playlists and genres. */
 export async function searchCatalog(query: string, userId?: string) {
   const q = query.trim();
@@ -180,6 +149,7 @@ export async function searchCatalog(query: string, userId?: string) {
       where: {
         deletedAt: null,
         OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
+        AND: [{ OR: [{ isPublic: true }, ...(userId ? [{ userId }] : [])] }],
       },
       include: { _count: { select: { tracks: true } }, user: { select: { name: true, image: true } } },
       orderBy: [{ updatedAt: "desc" }],
@@ -226,36 +196,10 @@ export async function searchCatalog(query: string, userId?: string) {
   };
 }
 
-export function slugForSectionHeader(input: string): string {
-  return input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
-}
-
 async function getAlbumTrackCounts(): Promise<Map<string, number>> {
   const rows = await db.albumTrack.groupBy({
     by: ["albumId"],
     _count: { _all: true },
   });
   return new Map(rows.map((r) => [r.albumId, r._count._all]));
-}
-
-/** Attach like/follow state to DTOs for the current user. */
-export async function withUserState(
-  tracks: ReturnType<typeof trackToDTO>[],
-  artists: ReturnType<typeof artistToDTO>[],
-  userId: string
-) {
-  const [liked, followed] = await Promise.all([
-    db.likedTrack.findMany({
-      where: { userId, trackId: { in: tracks.map((t) => t.id).filter(Boolean) as string[] } },
-    }),
-    db.followedArtist.findMany({
-      where: { userId, artistId: { in: artists.map((a) => a.id) } },
-    }),
-  ]);
-  const likedSet = new Set(liked.map((l) => l.trackId));
-  const followedSet = new Set(followed.map((f) => f.artistId));
-  return {
-    tracks: tracks.map((t) => ({ ...t, isLiked: t.id ? likedSet.has(t.id) : false })),
-    artists: artists.map((a) => ({ ...a, isFollowing: a ? followedSet.has(a.id) : false })),
-  };
 }

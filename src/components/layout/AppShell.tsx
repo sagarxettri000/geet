@@ -6,20 +6,29 @@ import { TopBar } from "./TopBar";
 import { MobileNav } from "./MobileNav";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import YouTubePlayerHost from "@/components/player/YouTubePlayerHost";
-import { QueueDrawer } from "@/components/player/QueueDrawer";
+import { usePlayerStore } from "@/stores/player";
 import { ToastProvider } from "@/components/ui/toast";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // theme is controlled via UserPreference / Settings; default to dark only if unset
+  // theme + saved playback preferences
   useEffect(() => {
     const cur = document.documentElement.getAttribute("data-theme");
     if (!cur) document.documentElement.setAttribute("data-theme", "dark");
-    // sync from server preference if available
-    fetch("/api/preferences").then((r) => r.json()).then((j) => {
-      if (j?.preference?.theme) document.documentElement.setAttribute("data-theme", j.preference.theme);
-    }).catch(() => {});
+    fetch("/api/preferences")
+      .then((r) => r.json())
+      .then((j) => {
+        const p = j?.preference;
+        if (!p) return;
+        if (p.theme) document.documentElement.setAttribute("data-theme", p.theme);
+        const store = usePlayerStore.getState();
+        if (p.volume != null) store.setVolume(p.volume);
+        if (p.muted != null) store.setMuted(p.muted);
+        if (p.repeatMode) store.setRepeat(p.repeatMode);
+        if (p.shuffle != null) store.setShuffle(p.shuffle);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -41,11 +50,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Global player + YouTube iframe */}
       <PlayerBar />
       <YouTubePlayerHost />
-      {/* Included for spec completeness; PlayerBar manages its own QueueDrawer internally */}
-      <QueueDrawer open={false} onClose={() => {}} />
     </ToastProvider>
   );
 }

@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Music2, Link2, Library, KeyRound, Play, Sparkles } from "lucide-react";
+import { Music2, Search, Library, Play, Sparkles } from "lucide-react";
 
 const features = [
   {
-    icon: Link2,
-    title: "YouTube paste",
-    desc: "Drop any YouTube link — GEET resolves it instantly into a playable track with artwork and metadata.",
+    icon: Search,
+    title: "Search everything",
+    desc: "Type any song, artist, or genre — GEET finds real YouTube and catalog results and plays them instantly.",
   },
   {
     icon: Play,
@@ -19,9 +19,9 @@ const features = [
     desc: "Create, reorder, and share playlists. Your library, your rules — private or public.",
   },
   {
-    icon: KeyRound,
-    title: "No API key",
-    desc: "Works without any YouTube or cloud API key. Self-hosted. Your data stays yours.",
+    icon: Sparkles,
+    title: "Tuned for you",
+    desc: "A home feed, mixes, and genre suggestions that learn from what you listen to.",
   },
 ] as const;
 
@@ -95,7 +95,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-pretty text-[17px] leading-7 text-muted">
-              Paste any YouTube link, build playlists, and play with a beautiful custom player. GEET is fast, private, and self-hosted.
+              Search any song, build playlists, and play with a beautiful custom player. GEET is fast, private, and self-hosted.
             </p>
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -133,8 +133,8 @@ export default function LandingPage() {
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-3 text-left">
                   {[
-                    ["128k", "tracks ingested"],
-                    ["12ms", "avg. paste → play"],
+                    ["∞", "songs to discover"],
+                    ["1 tap", "search → play"],
                     ["∞", "playlists"],
                   ].map(([v, k]) => (
                     <div key={k} className="rounded-2xl bg-surface px-3 py-3 sm:px-4">
@@ -170,7 +170,7 @@ export default function LandingPage() {
           <div className="glass mt-8 flex flex-col items-center justify-between gap-4 rounded-2xl p-6 sm:flex-row sm:p-8">
             <div>
               <h3 className="font-display text-lg font-semibold">Ready to hear it?</h3>
-              <p className="mt-1 text-sm text-muted">Paste your first link and hit play. No setup, no keys.</p>
+              <p className="mt-1 text-sm text-muted">Pick a song and hit play. Fast, free, no setup.</p>
             </div>
             <div className="flex gap-3">
               <Link href="/app">

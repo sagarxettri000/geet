@@ -53,10 +53,6 @@ export function timeAgo(date: Date | string): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
-export function normalizeSearch(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 export function stableHash(value: string): number {
   let hash = 0;
   for (let i = 0; i < value.length; i++) {

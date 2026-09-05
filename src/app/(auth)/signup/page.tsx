@@ -71,7 +71,7 @@ export default function SignupPage() {
     <div>
       <div className="mb-6">
         <h1 className="font-display text-xl font-semibold tracking-tight">Create account</h1>
-        <p className="mt-1.5 text-sm text-muted">Join GEET — paste, play, repeat.</p>
+        <p className="mt-1.5 text-sm text-muted">Join GEET — search, play, repeat.</p>
       </div>
 
       {error ? (

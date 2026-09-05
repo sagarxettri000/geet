@@ -22,12 +22,12 @@ export const metadata: Metadata = {
     template: "%s — GEET",
   },
   description:
-    "GEET is a premium music streaming experience. Paste any YouTube link, build playlists, and play with a beautiful custom player — no API key required.",
+    "GEET is a premium music streaming experience. Search any song, build playlists, and play with a beautiful custom player.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   manifest: "/manifest.json",
   openGraph: {
     title: "GEET — Where great music finds you",
-    description: "Premium music streaming. Real YouTube playback. No API key.",
+    description: "Premium music streaming. Real YouTube playback and search.",
     type: "website",
   },
 };

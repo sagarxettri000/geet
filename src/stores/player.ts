@@ -23,7 +23,7 @@ interface PlayerActions {
   play: () => void;
   pause: () => void;
   toggle: () => void;
-  next: () => void;
+  next: (opts?: { auto?: boolean }) => void;
   prev: () => void;
   seek: (sec: number) => void;
   setStatus: (s: PlayerStatus) => void;
@@ -34,21 +34,11 @@ interface PlayerActions {
   setShuffle: (v: boolean) => void;
   setRepeat: (m: RepeatMode) => void;
   playTrack: (track: Track) => void;
-  addToQueue: (track: Track) => void;
+  setTrackLiked: (liked: boolean) => void;
   removeFromQueue: (idx: number) => void;
   clearQueue: () => void;
-  shuffleQueue: () => void;
   setDebugInfo: (info: string) => void;
   requestPlayerReload: () => void;
-}
-
-function shuffleArray<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -86,15 +76,19 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set({ isPlaying: !isPlaying, status: !isPlaying ? "playing" : "paused" });
   },
 
-  next: () => {
+  next: (opts?: { auto?: boolean }) => {
+    const auto = opts?.auto ?? false;
     const { queue, index, repeat, shuffle } = get();
     if (!queue.length) return;
-    if (repeat === "one") {
+    // "repeat one" only loops the same track on natural end (auto),
+    // never when the user presses skip.
+    if (repeat === "one" && auto) {
       set({ currentTime: 0, status: "playing", isPlaying: true });
       return;
     }
     if (shuffle && queue.length > 1) {
-      const nextIdx = Math.floor(Math.random() * queue.length);
+      let nextIdx = Math.floor(Math.random() * queue.length);
+      if (nextIdx === index) nextIdx = (nextIdx + 1) % queue.length;
       set({
         index: nextIdx,
         currentTrack: queue[nextIdx],
@@ -169,9 +163,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       queueId: null,
     }),
 
-  addToQueue: (track) =>
+  setTrackLiked: (liked) =>
     set((s) => ({
-      queue: [...s.queue, track],
+      currentTrack: s.currentTrack ? { ...s.currentTrack, isLiked: liked } : s.currentTrack,
+      queue: s.queue.map((t, i) => (i === s.index ? { ...t, isLiked: liked } : t)),
     })),
 
   removeFromQueue: (idx) =>
@@ -193,16 +188,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
   clearQueue: () =>
     set({ queue: [], index: 0, currentTrack: null, status: "idle", isPlaying: false }),
-
-  shuffleQueue: () =>
-    set((s) => {
-      if (s.queue.length <= 1) return {};
-      const current = s.queue[s.index];
-      const rest = s.queue.filter((_, i) => i !== s.index);
-      const shuffled = shuffleArray(rest);
-      const newQueue = [current, ...shuffled];
-      return { queue: newQueue, index: 0, currentTrack: current };
-    }),
 
   setDebugInfo: (info) => set({ debugInfo: info }),
   requestPlayerReload: () => set({ reloadNonce: Date.now() }),

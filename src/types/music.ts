@@ -1,4 +1,9 @@
+import type { YoutubeSearchHit } from "@/lib/youtube/data-api";
+
 export type MusicProvider = "youtube";
+
+// Canonical definition lives in lib/youtube/data-api.ts (single source of truth).
+export type { YoutubeSearchHit };
 
 export interface TrackSource {
   provider: MusicProvider;
@@ -46,7 +51,6 @@ export interface Album {
   type: "album" | "single" | "ep";
   trackCount: number;
   durationSec: number | null;
-  isSaved?: boolean;
 }
 
 export interface Playlist {
@@ -63,13 +67,6 @@ export interface Playlist {
   createdAt: string;
   updatedAt: string;
   isLiked?: boolean;
-}
-
-export interface PlaylistTrackEntry {
-  playlistTrackId: string;
-  position: number;
-  addedAt: string;
-  track: Track;
 }
 
 export interface Genre {
@@ -95,15 +92,6 @@ export interface HomeSection<T> {
   items: T[];
 }
 
-export interface HistoryEntry {
-  id: string;
-  track: Track;
-  playedAt: string;
-  progressSec?: number | null;
-  durationSec?: number | null;
-  completion?: number;
-}
-
 export interface SearchResults {
   tracks: Track[];
   artists: Artist[];
@@ -111,18 +99,6 @@ export interface SearchResults {
   playlists: Playlist[];
   genres: Genre[];
   youtube?: YoutubeSearchHit[];
-}
-
-export interface YoutubeSearchHit {
-  videoId: string;
-  title: string;
-  channelTitle: string;
-  description: string | null;
-  publishedAt: string;
-  thumbnailUrl: string | null;
-  durationSec: number | null;
-  viewCount?: number | null;
-  likeCount?: number | null;
 }
 
 export type RepeatMode = "off" | "all" | "one";
@@ -135,11 +111,3 @@ export type PlayerStatus =
   | "paused"
   | "ended"
   | "error";
-
-export const defaultTrackFallback = (title: string, artist: string): Track => ({
-  title,
-  artist,
-  durationSec: null,
-  thumbnailUrl: null,
-  sources: [],
-});

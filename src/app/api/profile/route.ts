@@ -26,6 +26,18 @@ export async function PATCH(req: Request) {
   if (displayName !== undefined && displayName) {
     await db.user.update({ where: { id: userId }, data: { name: displayName } }).catch(() => {});
   }
-  const user = await db.user.findUnique({ where: { id: userId }, include: { profile: true } });
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      role: true,
+      bannedAt: true,
+      createdAt: true,
+      profile: { select: { id: true, userId: true, displayName: true, bio: true } },
+    },
+  });
   return NextResponse.json({ ok: true, profile: user?.profile, user });
 }
