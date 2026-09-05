@@ -93,6 +93,7 @@ export function PlayerBar() {
               <img
                 src={currentTrack.thumbnailUrl}
                 alt={currentTrack.title}
+                onError={(e) => (e.currentTarget.style.display = "none")}
                 className="h-11 w-11 shrink-0 rounded-md object-cover md:h-12 md:w-12"
               />
             ) : (

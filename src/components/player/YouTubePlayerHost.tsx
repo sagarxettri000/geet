@@ -45,9 +45,10 @@ declare global {
       };
     };
     onYouTubeIframeAPIReady?: () => void;
-    __geetHost?: boolean;
   }
 }
+
+let hostBusy = false;
 
 const YT_ERROR_TEXT: Record<number, string> = {
   2: "invalid-param",
@@ -123,8 +124,10 @@ function loadYouTubeAPI(): Promise<boolean> {
   });
 }
 
-/** Start the desired video. When the user wants sound, we start muted so
- *  autoplay policies can't block us, then unmute the moment playback starts. */
+/** Mute before autoplaying so the browser can't block a gesture-less playback,
+ *  then unmute the instant the player actually reaches PLAYING state. */
+let pendingUnmute = false;
+
 function armMutedPlay(p: YTPlayer, st: { muted: boolean; volume: number }): boolean {
   if (!st.muted && st.volume > 0) {
     pendingUnmute = true;
@@ -135,12 +138,6 @@ function armMutedPlay(p: YTPlayer, st: { muted: boolean; volume: number }): bool
     return true;
   }
   return false;
-}
-
-let pendingUnmute = false;
-declare global {
-  // eslint-disable-next-line no-var
-  var __geetHostBusy: boolean | undefined;
 }
 
 export default function YouTubePlayerHost() {
@@ -185,34 +182,66 @@ export default function YouTubePlayerHost() {
     if (!p || !readyRef.current) return;
     try {
       const st = getStore();
-      if (st.muted || st.volume === 0) return;
-      if (pendingUnmute) {
-        const state = p.getPlayerState?.();
-        if (state === window.YT?.PlayerState?.PLAYING) {
-          pendingUnmute = false;
-          p.unMute?.();
-          p.setVolume(st.volume);
-          log("unmute-on-playing");
-        }
+      if (st.muted || st.volume === 0 || !pendingUnmute) return;
+      const state = p.getPlayerState?.();
+      if (state === window.YT?.PlayerState?.PLAYING) {
+        pendingUnmute = false;
+        p.unMute?.();
+        p.setVolume(st.volume);
+        log("unmute-on-playing");
       }
     } catch {}
   }, [getStore]);
 
-  const createPlayer = useCallback(
-    (videoId: string | null) => {
-      if (playerRef.current || typeof window === "undefined" || !window.YT?.Player) return;
+  /** Watchdog: if the PLAYING event is missed, unmute once the player is audibly playing. */
+  const safetyUnmute = useCallback(() => {
+    setTimeout(() => {
+      try {
+        if (pendingUnmute && readyRef.current && playerRef.current) {
+          const state = playerRef.current.getPlayerState?.();
+          if (state === window.YT?.PlayerState?.PLAYING) {
+            pendingUnmute = false;
+            playerRef.current.unMute?.();
+            playerRef.current.setVolume(getStore().volume);
+            log("unmute-safety");
+          }
+        }
+      } catch {}
+    }, 1500);
+  }, [getStore]);
+
+  /** Start a given video on an existing, ready player. */
+  const playVideoOn = useCallback(
+    (p: YTPlayer, vid: string) => {
+      const st = getStore();
+      if (st.isPlaying) {
+        armMutedPlay(p, st);
+        p.loadVideoById(vid);
+        safetyUnmute();
+      } else {
+        p.cueVideoById?.(vid);
+      }
+    },
+    [getStore, safetyUnmute]
+  );
+
+  /** Create the player lazily with a real video id (never undefined!). */
+  const ensurePlayer = useCallback(
+    (videoId: string): YTPlayer | null => {
+      if (playerRef.current) return playerRef.current;
+      if (typeof window === "undefined" || !window.YT?.Player) return null;
       const containerId = "geet-yt-host-player";
       if (!document.getElementById(containerId)) {
         debug("no-container");
-        return;
+        return null;
       }
       debug("creating");
       log("creating player", videoId);
       try {
-        playerRef.current = new window.YT.Player(containerId, {
+        const p = new window.YT.Player(containerId, {
           width: "480",
           height: "270",
-          videoId: videoId ?? undefined,
+          videoId,
           host: "https://www.youtube.com",
           playerVars: {
             autoplay: 1,
@@ -240,18 +269,11 @@ export default function YouTubePlayerHost() {
                 syncVolume(ev.target);
               } catch {}
               debug("ready");
-              // If a track was queued before the player finished loading, load it now.
-              try {
-                const queued = videoIdRef.current;
-                if (queued) {
-                  if (st.isPlaying) {
-                    armMutedPlay(ev.target, st);
-                    ev.target.loadVideoById(queued);
-                  } else {
-                    ev.target.cueVideoById(queued);
-                  }
-                }
-              } catch {}
+              // load whatever track is pending (typical case: player created from a play click)
+              const queued = videoIdRef.current;
+              if (queued) {
+                playVideoOn(ev.target, queued);
+              }
               try {
                 if (st.isPlaying) ev.target.playVideo();
               } catch {}
@@ -298,13 +320,17 @@ export default function YouTubePlayerHost() {
             }) as unknown as (e: unknown) => void,
           },
         });
+        playerRef.current = p;
+        return p;
       } catch (err) {
         log("create failed", err);
         debug("create-failed");
+        playerRef.current = null;
         getStore().setStatus("error");
+        return null;
       }
     },
-    [getStore, debug, syncVolume, unmuteIfPlaying]
+    [getStore, debug, syncVolume, unmuteIfPlaying, playVideoOn]
   );
 
   const destroyPlayer = useCallback(() => {
@@ -315,18 +341,57 @@ export default function YouTubePlayerHost() {
     readyRef.current = false;
     videoIdRef.current = null;
     pendingUnmute = false;
-    if (globalThis.__geetHostBusy) {
-      globalThis.__geetHostBusy = false;
+    if (hostBusy) {
+      hostBusy = false;
     }
   }, []);
 
-  // Load API & create player once (StrictMode-safe via module flag)
+  const bootstrap = useCallback(
+    (vid: string) => {
+      // Wait for the YouTube API + a container, then create the player once.
+      if (playerRef.current) return;
+      tryBootstrapRef.current = true;
+      const created = ensurePlayer(vid);
+      if (created) {
+        // creation succeeded; onReady will load due to videoIdRef
+        return;
+      }
+      // API still loading or creation raced — poll until we can
+      const t = setInterval(() => {
+        if (window.YT?.Player && !playerRef.current) {
+          const p = ensurePlayer(vid);
+          if (p) {
+            clearInterval(t);
+            if (readyRef.current) playVideoOn(p, vid);
+          }
+        } else if (playerRef.current) {
+          clearInterval(t);
+          if (!readyRef.current) {
+            const t2 = setInterval(() => {
+              if (readyRef.current && playerRef.current && videoIdRef.current) {
+                playVideoOn(playerRef.current, videoIdRef.current);
+                clearInterval(t2);
+              }
+            }, 200);
+            setTimeout(() => clearInterval(t2), 5000);
+          } else if (videoIdRef.current) {
+            playVideoOn(playerRef.current, videoIdRef.current);
+          }
+        }
+      }, 150);
+      setTimeout(() => clearInterval(t), 6000);
+    },
+    [ensurePlayer, playVideoOn]
+  );
+  const tryBootstrapRef = useRef(false);
+
+  // Load the YouTube IFrame API once (no player creation here!)
   useEffect(() => {
     let cancelled = false;
-    if (globalThis.__geetHostBusy) return;
-    globalThis.__geetHostBusy = true;
+    if (hostBusy) return;
+    hostBusy = true;
     loadYouTubeAPI().then((ok) => {
-      if (cancelled || globalThis.__geetHostBusy === false) return;
+      if (cancelled || hostBusy === false) return;
       if (!ok) {
         debug("api-load-failed");
         log("YouTube IFrame API failed to load");
@@ -335,23 +400,11 @@ export default function YouTubePlayerHost() {
       }
       debug("api-ok");
       log("api ok");
-      const vid = getVideoId(currentTrack);
-      videoIdRef.current = vid;
-      createPlayer(vid);
-      // If the API global is set but the player globals need a tick, poll briefly.
-      const t = setInterval(() => {
-        if (window.YT?.Player && !playerRef.current) {
-          createPlayer(getVideoId(currentTrack));
-          if (playerRef.current) clearInterval(t);
-        }
-      }, 150);
-      setTimeout(() => clearInterval(t), 4000);
     });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [createPlayer]);
+  }, [debug, getStore]);
 
   // Recreate player on explicit reload request
   useEffect(() => {
@@ -359,84 +412,52 @@ export default function YouTubePlayerHost() {
     destroyPlayer();
     debug("recreating");
     log("recreating player", reloadNonce);
-    const t = setInterval(() => {
-      if (window.YT?.Player) {
-        globalThis.__geetHostBusy = true;
-        createPlayer(getVideoId(currentTrack));
-        if (playerRef.current) clearInterval(t);
-      }
-    }, 150);
-    setTimeout(() => clearInterval(t), 4000);
+    const vid = getVideoId(currentTrack);
+    videoIdRef.current = vid;
+    if (vid) bootstrap(vid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadNonce]);
 
-  // Sync videoId when track changes
+  // Sync videoId when track changes — this is where the player gets born.
   useEffect(() => {
     const vid = getVideoId(currentTrack);
-    if (vid === videoIdRef.current) return;
-    videoIdRef.current = vid;
-    log("track change", vid);
-    const p = playerRef.current;
-    if (!p || !readyRef.current) {
-      if (p && vid) {
-        // roll over onto video once the player reports ready
-        const t = setInterval(() => {
-          if (readyRef.current && playerRef.current && videoIdRef.current) {
-            try {
-              const st = getStore();
-              if (st.isPlaying) {
-                armMutedPlay(playerRef.current, st);
-                playerRef.current.loadVideoById(videoIdRef.current);
-              } else {
-                (playerRef.current as YTPlayer).cueVideoById?.(videoIdRef.current);
-              }
-            } catch {}
-            clearInterval(t);
-          }
-        }, 200);
-        setTimeout(() => clearInterval(t), 4000);
-      }
-      return;
-    }
     if (!vid) {
-      try {
-        p.pauseVideo();
-        p.stopVideo?.();
-      } catch {}
+      videoIdRef.current = null;
+      const p = playerRef.current;
+      if (p && readyRef.current) {
+        try { p.pauseVideo(); p.stopVideo?.(); } catch {}
+      }
       return;
     }
-    try {
-      const st = usePlayerStore.getState();
-      if (st.isPlaying) {
-        armMutedPlay(p, st);
-        (p as YTPlayer).loadVideoById(vid);
-      } else {
-        (p as YTPlayer).cueVideoById?.(vid);
-        if ((p as YTPlayer).cueVideoById == null) {
-          (p as YTPlayer).loadVideoById(vid);
-          p.pauseVideo();
-        }
+    const sameVideo = vid === videoIdRef.current;
+    videoIdRef.current = vid;
+    log("track change", vid, "same:", sameVideo, "player:", !!playerRef.current, "ready:", readyRef.current);
+    const p = playerRef.current;
+    if (p && readyRef.current) {
+      if (sameVideo) {
+        // re-clicking the same song — just make sure it's actually playing
+        const st = usePlayerStore.getState();
+        if (st.isPlaying) { p.playVideo(); if (pendingUnmute) unmuteIfPlaying(); }
+        return;
       }
-      // Safety net: if the PLAYING event never reaches us, unmute once playing anyway.
-      setTimeout(() => {
-        try {
-          if (pendingUnmute && readyRef.current && playerRef.current) {
-            const state = playerRef.current.getPlayerState?.();
-            if (state === window.YT?.PlayerState?.PLAYING) {
-              pendingUnmute = false;
-              playerRef.current.unMute?.();
-              playerRef.current.setVolume(getStore().volume);
-              log("unmute-safety");
-            }
-          }
-        } catch {}
-      }, 1500);
-    } catch {
-      try {
-        (p as YTPlayer).loadVideoById(vid);
-      } catch {}
+      playVideoOn(p, vid);
+      return;
     }
-  }, [currentTrack, getStore, debug]);
+    if (!p && !tryBootstrapRef.current) {
+      bootstrap(vid);
+      return;
+    }
+    if (p && !readyRef.current) {
+      // wait for ready, then load on rollover
+      const t = setInterval(() => {
+        if (readyRef.current && playerRef.current && videoIdRef.current) {
+          playVideoOn(playerRef.current, videoIdRef.current);
+          clearInterval(t);
+        }
+      }, 200);
+      setTimeout(() => clearInterval(t), 5000);
+    }
+  }, [currentTrack, getStore, bootstrap, playVideoOn, unmuteIfPlaying]);
 
   // Sync isPlaying -> play/pause
   useEffect(() => {
@@ -457,6 +478,7 @@ export default function YouTubePlayerHost() {
       if (muted || volume === 0) {
         p.mute?.();
         p.setVolume(0);
+        pendingUnmute = false;
       } else if (pendingUnmute) {
         p.setVolume(volume);
       } else {
@@ -464,7 +486,6 @@ export default function YouTubePlayerHost() {
         p.setVolume(volume);
       }
     } catch {}
-    void pendingUnmute;
   }, [volume, muted]);
 
   // Seek handling: when store currentTime jumps, sync to player
@@ -534,8 +555,8 @@ export default function YouTubePlayerHost() {
       try {
         playerRef.current?.destroy?.();
       } catch {}
-      if (globalThis.__geetHostBusy) {
-        globalThis.__geetHostBusy = false;
+      if (hostBusy) {
+        hostBusy = false;
       }
     };
   }, []);
