@@ -13,6 +13,7 @@ import {
   VolumeX,
   Heart,
   ListMusic,
+  RotateCcw,
 } from "lucide-react";
 import { usePlayerStore } from "@/stores/player";
 import { formatDuration, artworkFallback } from "@/lib/utils";
@@ -41,6 +42,8 @@ export function PlayerBar() {
   const [liked, setLiked] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
   const status = usePlayerStore((s) => s.status);
+  const debugInfo = usePlayerStore((s) => s.debugInfo);
+  const requestPlayerReload = usePlayerStore((s) => s.requestPlayerReload);
 
   const effectiveDuration = duration || currentTrack?.durationSec || 0;
   const progressPct = effectiveDuration ? (currentTime / effectiveDuration) * 100 : 0;
@@ -218,7 +221,22 @@ export function PlayerBar() {
             >
               <ListMusic className="h-4 w-4" />
             </button>
+            <button
+              onClick={requestPlayerReload}
+              aria-label="Restart player"
+              title="Restart player"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted hover:text-foreground hover:bg-surface transition-colors"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
           </div>
+        </div>
+
+        {/* debug line */}
+        <div className="flex items-center gap-2 overflow-hidden px-3 pb-1 text-[10px] tabular-nums text-muted/60">
+          <span className="shrink-0 font-mono">{debugVideoId.slice(0, 11)}</span>
+          <span className="shrink-0">{status}</span>
+          <span className="truncate font-mono">{debugInfo || "…"}</span>
         </div>
 
         {/* mobile progress slider */}

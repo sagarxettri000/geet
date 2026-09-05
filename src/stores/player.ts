@@ -14,6 +14,8 @@ interface PlayerState {
   duration: number;
   currentTrack: Track | null;
   queueId: string | null;
+  debugInfo: string;
+  reloadNonce: number;
 }
 
 interface PlayerActions {
@@ -36,6 +38,8 @@ interface PlayerActions {
   removeFromQueue: (idx: number) => void;
   clearQueue: () => void;
   shuffleQueue: () => void;
+  setDebugInfo: (info: string) => void;
+  requestPlayerReload: () => void;
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -60,6 +64,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   duration: 0,
   currentTrack: null,
   queueId: null,
+  debugInfo: "",
+  reloadNonce: 0,
 
   setQueue: (tracks, startIndex = 0, queueId = null) =>
     set({
@@ -197,4 +203,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const newQueue = [current, ...shuffled];
       return { queue: newQueue, index: 0, currentTrack: current };
     }),
+
+  setDebugInfo: (info) => set({ debugInfo: info }),
+  requestPlayerReload: () => set({ reloadNonce: Date.now() }),
 }));
