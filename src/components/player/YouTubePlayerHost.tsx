@@ -12,6 +12,7 @@ type YTPlayer = {
   setVolume: (v: number) => void;
   mute: () => void;
   unMute: () => void;
+  isMuted: () => boolean;
   getCurrentTime: () => number;
   getDuration: () => number;
   getPlayerState: () => number;
@@ -44,6 +45,7 @@ declare global {
       };
     };
     onYouTubeIframeAPIReady?: () => void;
+    __geetHost?: boolean;
   }
 }
 
@@ -54,6 +56,11 @@ const YT_ERROR_TEXT: Record<number, string> = {
   101: "embedding-disallowed",
   150: "embedding-disallowed",
 };
+
+function log(...args: unknown[]) {
+  // eslint-disable-next-line no-console
+  console.log("[GEET]", ...args);
+}
 
 function getVideoId(track: Track | null): string | null {
   if (!track) return null;
@@ -116,6 +123,26 @@ function loadYouTubeAPI(): Promise<boolean> {
   });
 }
 
+/** Start the desired video. When the user wants sound, we start muted so
+ *  autoplay policies can't block us, then unmute the moment playback starts. */
+function armMutedPlay(p: YTPlayer, st: { muted: boolean; volume: number }): boolean {
+  if (!st.muted && st.volume > 0) {
+    pendingUnmute = true;
+    try {
+      p.mute?.();
+      p.setVolume(st.volume);
+    } catch {}
+    return true;
+  }
+  return false;
+}
+
+let pendingUnmute = false;
+declare global {
+  // eslint-disable-next-line no-var
+  var __geetHostBusy: boolean | undefined;
+}
+
 export default function YouTubePlayerHost() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -128,8 +155,8 @@ export default function YouTubePlayerHost() {
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoIdRef = useRef<string | null>(null);
-  const mutedForAutoplayRef = useRef(false);
 
   const getStore = useCallback(() => usePlayerStore.getState(), []);
   const debug = useCallback(
@@ -153,6 +180,24 @@ export default function YouTubePlayerHost() {
     [getStore]
   );
 
+  const unmuteIfPlaying = useCallback(() => {
+    const p = playerRef.current;
+    if (!p || !readyRef.current) return;
+    try {
+      const st = getStore();
+      if (st.muted || st.volume === 0) return;
+      if (pendingUnmute) {
+        const state = p.getPlayerState?.();
+        if (state === window.YT?.PlayerState?.PLAYING) {
+          pendingUnmute = false;
+          p.unMute?.();
+          p.setVolume(st.volume);
+          log("unmute-on-playing");
+        }
+      }
+    } catch {}
+  }, [getStore]);
+
   const createPlayer = useCallback(
     (videoId: string | null) => {
       if (playerRef.current || typeof window === "undefined" || !window.YT?.Player) return;
@@ -162,13 +207,15 @@ export default function YouTubePlayerHost() {
         return;
       }
       debug("creating");
+      log("creating player", videoId);
       try {
         playerRef.current = new window.YT.Player(containerId, {
-          width: "320",
-          height: "180",
+          width: "480",
+          height: "270",
           videoId: videoId ?? undefined,
           host: "https://www.youtube.com",
           playerVars: {
+            autoplay: 1,
             playsinline: 1,
             controls: 0,
             modestbranding: 1,
@@ -183,25 +230,26 @@ export default function YouTubePlayerHost() {
             onReady: ((e: unknown) => {
               const ev = e as { target: YTPlayer };
               readyRef.current = true;
+              log("player ready");
               const st = getStore();
-              syncVolume(ev.target);
-              debug("ready");
               try {
                 const d = ev.target.getDuration?.() ?? 0;
                 if (d) st.setDuration(d);
               } catch {}
+              try {
+                syncVolume(ev.target);
+              } catch {}
+              debug("ready");
               // If a track was queued before the player finished loading, load it now.
               try {
                 const queued = videoIdRef.current;
-                if (queued && st.isPlaying) {
-                  if (!st.muted && st.volume > 0) {
-                    mutedForAutoplayRef.current = true;
-                    try { ev.target.mute?.(); } catch {}
+                if (queued) {
+                  if (st.isPlaying) {
+                    armMutedPlay(ev.target, st);
+                    ev.target.loadVideoById(queued);
+                  } else {
+                    ev.target.cueVideoById(queued);
                   }
-                  ev.target.loadVideoById(queued);
-                } else if (queued) {
-                  ev.target.cueVideoById(queued);
-                  if (st.isPlaying) ev.target.playVideo();
                 }
               } catch {}
               try {
@@ -215,17 +263,8 @@ export default function YouTubePlayerHost() {
               switch (ev.data) {
                 case YTState.PLAYING:
                   store.setStatus("playing");
-                  debug(`playing`);
-                  // Autoplay happens muted; unmute deterministically once playback actually starts.
-                  if (mutedForAutoplayRef.current) {
-                    mutedForAutoplayRef.current = false;
-                    try {
-                      if (!store.muted && store.volume > 0) {
-                        ev.target.unMute?.();
-                        ev.target.setVolume(store.volume);
-                      }
-                    } catch {}
-                  }
+                  debug("playing");
+                  unmuteIfPlaying();
                   break;
                 case YTState.PAUSED:
                   store.setStatus("paused");
@@ -252,18 +291,20 @@ export default function YouTubePlayerHost() {
             onError: ((e: unknown) => {
               const data = (e as { data?: number })?.data;
               const text = data != null ? YT_ERROR_TEXT[data] ?? String(data) : "?";
-              console.error("[GEET] YouTube player error", data, e);
+              log("player error", data);
+              pendingUnmute = false;
               getStore().setStatus("error");
               debug(`err:${text}`);
             }) as unknown as (e: unknown) => void,
           },
         });
       } catch (err) {
+        log("create failed", err);
         debug("create-failed");
         getStore().setStatus("error");
       }
     },
-    [getStore, debug, syncVolume]
+    [getStore, debug, syncVolume, unmuteIfPlaying]
   );
 
   const destroyPlayer = useCallback(() => {
@@ -273,20 +314,27 @@ export default function YouTubePlayerHost() {
     playerRef.current = null;
     readyRef.current = false;
     videoIdRef.current = null;
-    mutedForAutoplayRef.current = false;
+    pendingUnmute = false;
+    if (globalThis.__geetHostBusy) {
+      globalThis.__geetHostBusy = false;
+    }
   }, []);
 
-  // Load API & create player once
+  // Load API & create player once (StrictMode-safe via module flag)
   useEffect(() => {
     let cancelled = false;
+    if (globalThis.__geetHostBusy) return;
+    globalThis.__geetHostBusy = true;
     loadYouTubeAPI().then((ok) => {
-      if (cancelled) return;
+      if (cancelled || globalThis.__geetHostBusy === false) return;
       if (!ok) {
         debug("api-load-failed");
+        log("YouTube IFrame API failed to load");
         getStore().setStatus("error");
         return;
       }
       debug("api-ok");
+      log("api ok");
       const vid = getVideoId(currentTrack);
       videoIdRef.current = vid;
       createPlayer(vid);
@@ -310,8 +358,10 @@ export default function YouTubePlayerHost() {
     if (!reloadNonce) return;
     destroyPlayer();
     debug("recreating");
+    log("recreating player", reloadNonce);
     const t = setInterval(() => {
       if (window.YT?.Player) {
+        globalThis.__geetHostBusy = true;
         createPlayer(getVideoId(currentTrack));
         if (playerRef.current) clearInterval(t);
       }
@@ -325,6 +375,7 @@ export default function YouTubePlayerHost() {
     const vid = getVideoId(currentTrack);
     if (vid === videoIdRef.current) return;
     videoIdRef.current = vid;
+    log("track change", vid);
     const p = playerRef.current;
     if (!p || !readyRef.current) {
       if (p && vid) {
@@ -333,11 +384,8 @@ export default function YouTubePlayerHost() {
           if (readyRef.current && playerRef.current && videoIdRef.current) {
             try {
               const st = getStore();
-              if (st.isPlaying && !st.muted && st.volume > 0) {
-                mutedForAutoplayRef.current = true;
-                try { playerRef.current.mute?.(); } catch {}
-              }
               if (st.isPlaying) {
+                armMutedPlay(playerRef.current, st);
                 playerRef.current.loadVideoById(videoIdRef.current);
               } else {
                 (playerRef.current as YTPlayer).cueVideoById?.(videoIdRef.current);
@@ -360,10 +408,7 @@ export default function YouTubePlayerHost() {
     try {
       const st = usePlayerStore.getState();
       if (st.isPlaying) {
-        if (!st.muted && st.volume > 0) {
-          mutedForAutoplayRef.current = true;
-          try { p.mute?.(); } catch {}
-        }
+        armMutedPlay(p, st);
         (p as YTPlayer).loadVideoById(vid);
       } else {
         (p as YTPlayer).cueVideoById?.(vid);
@@ -372,12 +417,26 @@ export default function YouTubePlayerHost() {
           p.pauseVideo();
         }
       }
+      // Safety net: if the PLAYING event never reaches us, unmute once playing anyway.
+      setTimeout(() => {
+        try {
+          if (pendingUnmute && readyRef.current && playerRef.current) {
+            const state = playerRef.current.getPlayerState?.();
+            if (state === window.YT?.PlayerState?.PLAYING) {
+              pendingUnmute = false;
+              playerRef.current.unMute?.();
+              playerRef.current.setVolume(getStore().volume);
+              log("unmute-safety");
+            }
+          }
+        } catch {}
+      }, 1500);
     } catch {
       try {
         (p as YTPlayer).loadVideoById(vid);
       } catch {}
     }
-  }, [currentTrack, getStore]);
+  }, [currentTrack, getStore, debug]);
 
   // Sync isPlaying -> play/pause
   useEffect(() => {
@@ -389,18 +448,23 @@ export default function YouTubePlayerHost() {
     } catch {}
   }, [isPlaying]);
 
-  // Sync volume/muted
+  // Sync volume/muted — but DON'T unmute while a muted-autoplay is pending,
+  // otherwise the browser blocks the autoplay-with-sound attempt.
   useEffect(() => {
     const p = playerRef.current;
     if (!p || !readyRef.current) return;
     try {
-      if (muted) p.mute?.();
-      else {
+      if (muted || volume === 0) {
+        p.mute?.();
+        p.setVolume(0);
+      } else if (pendingUnmute) {
+        p.setVolume(volume);
+      } else {
         p.unMute?.();
         p.setVolume(volume);
       }
-      if (!muted) p.setVolume(volume);
     } catch {}
+    void pendingUnmute;
   }, [volume, muted]);
 
   // Seek handling: when store currentTime jumps, sync to player
@@ -430,22 +494,49 @@ export default function YouTubePlayerHost() {
         if (typeof t === "number" && !Number.isNaN(t)) store.setCurrentTime(t);
         if (typeof d === "number" && !Number.isNaN(d) && d > 0) store.setDuration(d);
         const state = (p as unknown as { getPlayerState?: () => number }).getPlayerState?.();
-        if (state === window.YT?.PlayerState?.PLAYING) store.setStatus("playing");
+        if (state === window.YT?.PlayerState?.PLAYING) {
+          store.setStatus("playing");
+          unmuteIfPlaying();
+        }
         if (state === window.YT?.PlayerState?.PAUSED) store.setStatus("paused");
       } catch {}
     }, 250);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [getStore]);
+  }, [getStore, unmuteIfPlaying]);
+
+  // Heartbeat so we can see liveness while stuck
+  useEffect(() => {
+    heartbeatRef.current = setInterval(() => {
+      const p = playerRef.current;
+      log(
+        "beat",
+        p ? "player-yes" : "player-no",
+        "ready:",
+        readyRef.current,
+        "state:",
+        p ? p.getPlayerState?.() : "-",
+        "vid:",
+        videoIdRef.current
+      );
+    }, 4000);
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       try {
         playerRef.current?.destroy?.();
       } catch {}
+      if (globalThis.__geetHostBusy) {
+        globalThis.__geetHostBusy = false;
+      }
     };
   }, []);
 
@@ -457,11 +548,11 @@ export default function YouTubePlayerHost() {
         position: "fixed",
         left: 8,
         bottom: 130,
-        width: 320,
-        height: 180,
+        width: 480,
+        height: 270,
         overflow: "hidden",
         pointerEvents: "none",
-        opacity: 0.04,
+        opacity: 0.03,
         zIndex: 10,
       }}
     >
