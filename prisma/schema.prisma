@@ -2,7 +2,7 @@
 // SQLite for local development; identical schema targets PostgreSQL via DATABASE_URL.
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
