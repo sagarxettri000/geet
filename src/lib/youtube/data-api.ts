@@ -109,38 +109,67 @@ function apiKey(): string {
   return key;
 }
 
-const SEARCH_CATEGORY_IDS = ["10"]; // Music
 const REUSABLE_PARTS = "snippet";
 
 export async function searchYouTubeMusic(query: string, maxResults = 20) {
+  return searchYouTubeVideos({ query, maxResults, categoryId: "10" });
+}
+
+// Podcasts aren't in YouTube's Music category, so no category filter — and paginate
+// several pages deep so "show all episodes" actually gets everything available.
+export async function searchYouTubePodcasts(query: string, maxResults = 100) {
+  return searchYouTubeVideos({ query, maxResults });
+}
+
+async function searchYouTubeVideos({
+  query,
+  maxResults = 20,
+  categoryId,
+}: {
+  query: string;
+  maxResults?: number;
+  categoryId?: string;
+}): Promise<YoutubeSearchHit[]> {
   const key = apiKey();
-  const url = new URL("https://www.googleapis.com/youtube/v3/search");
-  url.searchParams.set("part", REUSABLE_PARTS);
-  url.searchParams.set("type", "video");
-  url.searchParams.set("q", query);
-  url.searchParams.set("maxResults", String(maxResults));
-  url.searchParams.set("videoCategoryId", SEARCH_CATEGORY_IDS[0]);
-  url.searchParams.set("key", key);
+  const hits: YoutubeSearchHit[] = [];
+  const seen = new Set<string>();
+  let pageToken: string | undefined;
 
-  const items = await fetchJson(searchResponseSchema, url);
-  const videos = items.filter((it): it is (typeof it & { id: { videoId: string } }) => !!it.id.videoId);
-  if (videos.length === 0) return [];
+  while (hits.length < maxResults) {
+    const url = new URL("https://www.googleapis.com/youtube/v3/search");
+    url.searchParams.set("part", REUSABLE_PARTS);
+    url.searchParams.set("type", "video");
+    url.searchParams.set("q", query);
+    url.searchParams.set("maxResults", String(Math.min(50, maxResults - hits.length)));
+    if (categoryId) url.searchParams.set("videoCategoryId", categoryId);
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    url.searchParams.set("key", key);
 
-  const videoIds = videos.map((it) => it.id.videoId);
-  const durations = await fetchDurations(videoIds);
+    const res = await fetchJson(searchResponseSchema, url);
+    const videos = res.items.filter((it): it is typeof it & { id: { videoId: string } } => !!it.id.videoId);
+    for (const it of videos) {
+      if (seen.has(it.id.videoId)) continue;
+      seen.add(it.id.videoId);
+      hits.push({
+        videoId: it.id.videoId,
+        title: it.snippet.title,
+        channelTitle: it.snippet.channelTitle,
+        description: it.snippet.description ?? null,
+        publishedAt: it.snippet.publishedAt,
+        thumbnailUrl: pickThumbnail(it.snippet.thumbnails),
+        durationSec: null,
+      });
+      if (hits.length >= maxResults) break;
+    }
 
-  const hits: YoutubeSearchHit[] = videos.map((it) => {
-    return {
-      videoId: it.id.videoId,
-      title: it.snippet.title,
-      channelTitle: it.snippet.channelTitle,
-      description: it.snippet.description ?? null,
-      publishedAt: it.snippet.publishedAt,
-      thumbnailUrl: pickThumbnail(it.snippet.thumbnails),
-      durationSec: durations.get(it.id.videoId) ?? null,
-    };
-  });
+    if (hits.length >= maxResults || !res.nextPageToken) break;
+    pageToken = res.nextPageToken;
+  }
 
+  const durations = await fetchDurations([...seen]);
+  for (const hit of hits) {
+    hit.durationSec = durations.get(hit.videoId) ?? null;
+  }
   return hits;
 }
 
@@ -170,8 +199,8 @@ export async function trendingYouTubeMusic(
   url.searchParams.set("maxResults", String(maxResults));
   url.searchParams.set("key", key);
 
-  const items = await fetchJson(trendingResponseSchema, url);
-  return items.map((it) => ({
+  const res = await fetchJson(trendingResponseSchema, url);
+  return res.items.map((it) => ({
     videoId: it.id,
     title: it.snippet.title,
     channelTitle: it.snippet.channelTitle,
@@ -196,8 +225,8 @@ async function fetchDurations(videoIds: string[]) {
     url.searchParams.set("id", chunk.join(","));
     url.searchParams.set("key", key);
 
-    const items = await fetchJson(videosResponseSchema, url);
-    for (const item of items) {
+    const res = await fetchJson(videosResponseSchema, url);
+    for (const item of res.items) {
       durations.set(item.id, parseIsoDuration(item.contentDetails.duration ?? ""));
     }
   }
@@ -207,7 +236,7 @@ async function fetchDurations(videoIds: string[]) {
 async function fetchJson<T extends { items: unknown[] }>(
   schema: z.ZodType<T>,
   url: URL
-): Promise<T["items"]> {
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, {
@@ -220,7 +249,7 @@ async function fetchJson<T extends { items: unknown[] }>(
 
   if (res.status === 403) {
     const body = await safeJson(res);
-    const reason = (body?.error?.errors?.[0]?.reason ?? "") as string;
+    const reason = (body as { error?: { errors?: { reason?: string }[] } })?.error?.errors?.[0]?.reason ?? "";
     if (reason === "quotaExceeded") {
       throw new DataApiError("Daily YouTube search quota exceeded", "quota");
     }
@@ -240,10 +269,10 @@ async function fetchJson<T extends { items: unknown[] }>(
   if (!parsed.success) {
     throw new DataApiError("Unexpected YouTube response", "invalid");
   }
-  return parsed.data.items;
+  return parsed.data;
 }
 
-function safeJson(res: Response): Promise<Record<string, any> | null> {
+function safeJson(res: Response): Promise<Record<string, unknown> | null> {
   return res.json().catch(() => null);
 }
 
