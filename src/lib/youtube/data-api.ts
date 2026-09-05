@@ -3,7 +3,7 @@ import { z } from "zod";
 const searchResponseSchema = z.object({
   items: z.array(
     z.object({
-      id: z.object({ videoId: z.string() }).catchall(z.unknown()),
+      id: z.object({ videoId: z.string().optional() }).catchall(z.unknown()),
       snippet: z.object({
         title: z.string(),
         channelTitle: z.string(),
@@ -11,11 +11,12 @@ const searchResponseSchema = z.object({
         publishedAt: z.string(),
         thumbnails: z
           .object({
-            maxres: z.object({ url: z.string() }).optional(),
-            high: z.object({ url: z.string() }).optional(),
-            medium: z.object({ url: z.string() }).optional(),
-            default: z.object({ url: z.string() }).optional(),
+            maxres: z.object({ url: z.string().optional() }).optional(),
+            high: z.object({ url: z.string().optional() }).optional(),
+            medium: z.object({ url: z.string().optional() }).optional(),
+            default: z.object({ url: z.string().optional() }).optional(),
           })
+          .catchall(z.unknown())
           .optional()
           .nullable(),
       }),
@@ -28,7 +29,9 @@ const videosResponseSchema = z.object({
   items: z.array(
     z.object({
       id: z.string(),
-      contentDetails: z.object({ duration: z.string() }),
+      contentDetails: z.object({
+        duration: z.string().optional().nullable(),
+      }),
     })
   ),
 });
@@ -84,12 +87,13 @@ export async function searchYouTubeMusic(query: string, maxResults = 20) {
   url.searchParams.set("key", key);
 
   const items = await fetchJson(searchResponseSchema, url);
-  if (items.length === 0) return [];
+  const videos = items.filter((it): it is (typeof it & { id: { videoId: string } }) => !!it.id.videoId);
+  if (videos.length === 0) return [];
 
-  const videoIds = items.map((it) => it.id.videoId);
+  const videoIds = videos.map((it) => it.id.videoId);
   const durations = await fetchDurations(videoIds);
 
-  const hits: YoutubeSearchHit[] = items.map((it) => {
+  const hits: YoutubeSearchHit[] = videos.map((it) => {
     const thumb = it.snippet.thumbnails;
     return {
       videoId: it.id.videoId,
@@ -124,7 +128,7 @@ async function fetchDurations(videoIds: string[]) {
 
     const items = await fetchJson(videosResponseSchema, url);
     for (const item of items) {
-      durations.set(item.id, parseIsoDuration(item.contentDetails.duration));
+      durations.set(item.id, parseIsoDuration(item.contentDetails.duration ?? ""));
     }
   }
   return durations;
