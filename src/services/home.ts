@@ -146,6 +146,15 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   if (history.length === 0) return [];
 
   const listened = new Set(history.map((h) => h.track.id));
+
+  // Anything you've ever played is off-limits for suggestions — heard forever.
+  const heardRows = await db.listeningHistory.findMany({
+    where: { userId },
+    select: { trackId: true },
+    orderBy: { playedAt: "desc" },
+    take: 1000,
+  });
+  for (const h of heardRows) listened.add(h.trackId);
   const listenedArtists = new Set<string>();
   const listenedGenres = new Set<string>();
   const artistCounts = new Map<string, { count: number; id: string | null; name: string }>();
@@ -188,13 +197,36 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   for (const artist of topArtists) {
     if (rows.length >= 3) break;
     const where = artist.id ? { artistId: artist.id } : { artistName: artist.name };
-    const all = await db.track.findMany({
+    const byArtist = await db.track.findMany({
       where,
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
       take: 40,
     });
-    const pools = pickForRow(all, listened);
+
+    // Heard songs are banned forever — only tracks you've never played qualify.
+    const mains = shuffle(byArtist.filter((t) => !listened.has(t.id))).slice(0, 6);
+
+    // Top up the row with related, never-heard tracks from the same genre so a
+    // refresh keeps serving genuinely new songs instead of the same handful.
+    const artistGenre = byArtist[0]?.genreId ?? null;
+    let related: typeof byArtist = [];
+    if (artistGenre) {
+      const relatedWhere: Record<string, unknown> = {
+        genreId: artistGenre,
+        id: { notIn: [...listened] },
+      };
+      if (artist.id) relatedWhere.NOT = { artistId: artist.id };
+      else relatedWhere.NOT = { artistName: artist.name };
+      related = await db.track.findMany({
+        where: relatedWhere,
+        include: { sources: true },
+        orderBy: [{ popularity: "desc" }],
+        take: 30,
+      });
+    }
+
+    const pools = shuffle([...mains, ...related]).slice(0, 12);
     if (pools.length === 0) continue;
     rows.push({
       key: `because-artist-${artist.id ?? artist.name}`,
@@ -204,18 +236,18 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
-  // Genre rows — "More {genre}" from what you actually play.
+  // Genre rows — "More {genre}" from what you actually play, always brand new.
   for (const [genreId] of shuffle([...genreCounts.entries()])) {
     if (rows.length >= 3) break;
     const name = genreNameMap.get(genreId);
     if (!name) continue;
     const all = await db.track.findMany({
-      where: { genreId },
+      where: { genreId, id: { notIn: [...listened] } },
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
-      take: 40,
+      take: 60,
     });
-    const pools = pickForRow(all, listened);
+    const pools = shuffle(all).slice(0, 12);
     if (pools.length === 0) continue;
     rows.push({
       key: `because-genre-${genreId}`,
@@ -235,7 +267,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   for (const artist of shuffle(freshArtists)) {
     if (rows.length >= 4) break;
     const all = await db.track.findMany({
-      where: { artistId: artist.id },
+      where: { artistId: artist.id, id: { notIn: [...listened] } },
       include: { sources: true },
       orderBy: [{ popularity: "desc" }],
       take: 24,
@@ -251,14 +283,6 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
   }
 
   return rows.slice(0, 4);
-}
-
-// Whole tracks you haven't played yet first, then the already-heard ones —
-// shuffled each load so the row content is fresh every visit.
-function pickForRow<T extends { id: string }>(all: T[], listened: Set<string>): T[] {
-  const unseen = shuffle(all.filter((t) => !listened.has(t.id)));
-  const heard = shuffle(all.filter((t) => listened.has(t.id)));
-  return [...unseen, ...heard].slice(0, 12);
 }
 
 async function loadNewReleases(userId: string) {
