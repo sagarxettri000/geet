@@ -42,3 +42,14 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# opencode
+.agents/
+skills-lock.json
+.env
+.env.local
+.env.vercel
+count*.ts
+test_*.ts
+debug_*.ts
+
