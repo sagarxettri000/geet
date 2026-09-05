@@ -151,6 +151,11 @@ export async function searchCatalog(query: string, userId?: string) {
         OR: [
           { title: { contains: q, mode: "insensitive" } },
           { artistName: { contains: q, mode: "insensitive" } },
+          { genre: { OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { slug: { contains: q, mode: "insensitive" } },
+          ] } },
+          { albumTracks: { some: { album: { title: { contains: q, mode: "insensitive" } } } } },
         ],
       },
       include: {
@@ -158,18 +163,18 @@ export async function searchCatalog(query: string, userId?: string) {
         likedBy: userId ? { where: { userId }, take: 1 } : false,
       },
       orderBy: [{ popularity: "desc" }],
-      take: 20,
+      take: 100,
     }),
     db.artist.findMany({
       where: { name: { contains: q, mode: "insensitive" } },
       orderBy: [{ monthlyListeners: "desc" }],
-      take: 8,
+      take: 12,
     }),
     db.album.findMany({
       where: { OR: [{ title: { contains: q, mode: "insensitive" } }, { artistName: { contains: q, mode: "insensitive" } }] },
       include: { _count: { select: { tracks: true } } },
       orderBy: [{ year: "desc" }],
-      take: 8,
+      take: 12,
     }),
     db.playlist.findMany({
       where: {
@@ -178,11 +183,16 @@ export async function searchCatalog(query: string, userId?: string) {
       },
       include: { _count: { select: { tracks: true } }, user: { select: { name: true, image: true } } },
       orderBy: [{ updatedAt: "desc" }],
-      take: 8,
+      take: 12,
     }),
     db.genre.findMany({
-      where: { name: { contains: q, mode: "insensitive" } },
-      take: 5,
+      where: {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { slug: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      take: 12,
     }),
   ]);
 

@@ -243,8 +243,24 @@ export default function SearchPage() {
               </section>
             );
           })}
-          {!data.tracks.length && !data.artists.length && !data.albums.length && !data.playlists.length && (
+          {!data.tracks.length && !data.artists.length && !data.albums.length && !data.playlists.length && !data.genres.length && (
             <p className="text-sm text-muted py-10 text-center">No results for “{debounced}”.</p>
+          )}
+          {data.genres.length > 0 && (
+            <section>
+              <h3 className="text-sm font-semibold mb-2">Genres <span className="text-muted font-normal">· {data.genres.length} · tap to discover the songs</span></h3>
+              <div className="flex flex-wrap gap-2">
+                {data.genres.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setQuery(g.name)}
+                    className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-medium hover:bg-primary-soft hover:text-primary transition-colors"
+                  >
+                    {g.name}
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       ) : null}

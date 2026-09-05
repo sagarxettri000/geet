@@ -13,7 +13,7 @@ export async function buildHomeFeed(userId: string) {
       loadNewReleases(userId),
       loadTopArtists(userId),
       loadTopAlbums(),
-      loadGenres(),
+      loadGenres(userId),
       loadMixes(userId),
       loadLikedTracks(userId),
       db.likedTrack.findMany({
@@ -278,11 +278,27 @@ async function loadTopAlbums() {
   }));
 }
 
-async function loadGenres() {
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function rotationSeed(userId: string): number {
+  let h = 0;
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+async function loadGenres(userId: string) {
   const genres = await db.genre.findMany({
     include: { _count: { select: { tracks: true } } },
   });
-  return genres.map((g) => ({
+  // Shuffle every load so the "suggested genres" feel fresh on each visit.
+  return shuffle(genres).map((g) => ({
     id: g.id,
     name: g.name,
     slug: g.slug,
@@ -308,18 +324,28 @@ async function loadMixes(userId: string) {
   }
   const topGenres = [...genreCount.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 2)
     .map(([id]) => id);
 
-  const resultGenres = topGenres.length > 0 ? topGenres : null;
-  const mixSources = resultGenres
-    ? resultGenres
-    : (await db.genre.findMany({ take: 2, select: { id: true } })).map((g) => g.id);
+  const seed = rotationSeed(userId) + Math.floor(Math.random() * 1_000_000);
+  const allGenres = await db.genre.findMany({ select: { id: true } });
+  const allIds = allGenres.map((g) => g.id);
+  if (allIds.length === 0) return [];
 
+  // Rotate so each visit suggests a fresh pairing: usually one from your history,
+  // plus one genre you haven't really listened to (a "new genre" suggestion).
+  const pool = topGenres.length > 0 ? topGenres : allIds;
+  const first = pool[seed % pool.length];
+  const fresh = allIds.filter((id) => id !== first && !topGenres.includes(id));
+  const second = fresh.length > 0 ? fresh[seed % fresh.length] : allIds[(seed + 1) % allIds.length];
+
+  const mixSources = [first, second].filter((id, i, arr) => id && arr.indexOf(id) === i).slice(0, 2);
   const colors = ["#FFB454", "#32CD7A", "#4C8BF5", "#F14C45"];
 
+  const likedCache = await db.likedTrack.findMany({ where: { userId }, select: { trackId: true } });
+  const likedSet = new Set(likedCache.map((l) => l.trackId));
+
   const mixes = await Promise.all(
-    mixSources.slice(0, 2).map(async (genreId, i) => {
+    mixSources.map(async (genreId, i) => {
       const genre = await db.genre.findUnique({ where: { id: genreId } });
       const tracks = await db.track.findMany({
         where: { genreId },
@@ -327,11 +353,9 @@ async function loadMixes(userId: string) {
         orderBy: { popularity: "desc" },
         take: 12,
       });
-      const liked = await db.likedTrack.findMany({ where: { userId }, select: { trackId: true } });
-      const likedSet = new Set(liked.map((l) => l.trackId));
       return {
         title: `${genre?.name ?? "Daily"} Mix ${i + 1}`,
-        subtitle: `${genre?.name ?? "Tuned"}: ${tracks.length} tracks · for ${userId.slice(0, 5)}`,
+        subtitle: `${genre?.name ?? "Tuned"}: ${tracks.length} tracks · made for you`,
         color: colors[i % colors.length],
         tracks: tracks.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
       };
