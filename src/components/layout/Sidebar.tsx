@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Search, Library, ListMusic, Heart, Settings } from "lucide-react";
+import { Home, Mic2, Library, ListMusic, Heart, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 
 const NAV = [
   { href: "/app", label: "Home", icon: Home, exact: true },
-  { href: "/app/search", label: "Search", icon: Search },
+  { href: "/app/podcast", label: "Podcasts", icon: Mic2 },
   { href: "/app/library", label: "Library", icon: Library },
   { href: "/app/playlists", label: "Playlists", icon: ListMusic },
 ] as const;
