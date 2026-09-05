@@ -137,7 +137,7 @@ export function PlayerBar() {
               <button
                 onClick={toggle}
                 aria-label={isPlaying ? "Pause" : "Play"}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary-hover transition-colors shadow"
               >
                 {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
               </button>

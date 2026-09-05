@@ -43,7 +43,7 @@ export function ProfileEditor({
         <p className="text-[11px] text-muted text-right">{bio.length}/280</p>
       </div>
       {msg && <p className={`text-xs ${msg === "Saved" ? "text-success" : "text-danger"}`}>{msg}</p>}
-      <button onClick={save} disabled={saving} className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+      <button onClick={save} disabled={saving} className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50">
         {saving ? "Saving…" : "Save changes"}
       </button>
     </div>

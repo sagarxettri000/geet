@@ -5,22 +5,23 @@
 /* ---------------------------------- TOKENS: DARK (default) ---------------------------------- */
 :root,
 [data-theme="dark"] {
-  --background: #0a0a0c;
-  --background-elevated: #101014;
+  --background: #0b0b10;
+  --background-elevated: #12121a;
   --surface: 255 255 255 / 0.03;
   --surface-elevated: 255 255 255 / 0.06;
   --surface-glass: 18 18 24 / 0.6;
   --border: 255 255 255 / 0.08;
   --border-strong: 255 255 255 / 0.14;
-  --foreground: #f4f4f6;
-  --muted: #a0a0ab;
+  --foreground: #ffffff;
+  --muted: #a1a1aa;
   --muted-2: #6c6c76;
-  --primary: #ffb454;
-  --primary-foreground: #201300;
-  --primary-soft: 255 180 84 / 0.14;
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --primary-foreground: #ffffff;
+  --primary-soft: 139 92 246 / 0.16;
   --accent: #ff6b6b;
   --accent-soft: 255 107 107 / 0.14;
-  --success: #34d399;
+  --success: #22c55e;
   --warning: #fbbf24;
   --danger: #f87171;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.45), 0 8px 24px rgb(0 0 0 / 0.32),
@@ -46,9 +47,10 @@
   --foreground: #1c1c1f;
   --muted: #5c5a60;
   --muted-2: #8a888f;
-  --primary: #c2771d;
+  --primary: #7c3aed;
+  --primary-hover: #6d28d9;
   --primary-foreground: #ffffff;
-  --primary-soft: 194 119 29 / 0.12;
+  --primary-soft: 124 58 237 / 0.12;
   --accent: #e05252;
   --accent-soft: 224 82 82 / 0.12;
   --success: #0f9d6e;
@@ -74,6 +76,7 @@
   --color-muted: var(--muted);
   --color-muted-2: var(--muted-2);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: rgb(var(--primary-soft));
   --color-accent: var(--accent);

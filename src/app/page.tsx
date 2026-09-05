@@ -33,11 +33,11 @@ function Logo({ size = 28 }: { size?: number }) {
         style={{
           width: size + 8,
           height: size + 8,
-          background: "#FFB454",
-          boxShadow: "0 4px 20px rgb(255 180 84 / 0.35)",
+          background: "#8B5CF6",
+          boxShadow: "0 4px 20px rgb(139 92 246 / 0.4)",
         }}
       >
-        <Music2 size={size * 0.62} className="text-[#201300]" />
+        <Music2 size={size * 0.62} className="text-white" />
       </span>
       <span className="text-[22px] tracking-[-0.02em]">GEET</span>
     </span>
@@ -49,7 +49,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col overflow-auto">
       {/* ambient glows */}
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-32 left-1/2 h-[640px] w-[960px] -translate-x-1/2 rounded-full opacity-[0.12] blur-[80px]" style={{ background: "radial-gradient(ellipse at center, #FFB454 0%, transparent 65%)" }} />
+        <div className="absolute -top-32 left-1/2 h-[640px] w-[960px] -translate-x-1/2 rounded-full opacity-[0.12] blur-[80px]" style={{ background: "radial-gradient(ellipse at center, #8B5CF6 0%, transparent 65%)" }} />
         <div className="absolute top-64 -right-48 h-[520px] w-[520px] rounded-full opacity-[0.07] blur-[80px]" style={{ background: "radial-gradient(ellipse at center, #ff6b6b 0%, transparent 65%)" }} />
         <div className="absolute bottom-0 left-0 h-[480px] w-[680px] rounded-full opacity-[0.05] blur-[90px]" style={{ background: "radial-gradient(ellipse at center, #818cf8 0%, transparent 65%)" }} />
       </div>
@@ -91,7 +91,7 @@ export default function LandingPage() {
             <h1 className="mt-6 font-display text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-[56px] lg:leading-[1.05]">
               Where great music
               <br />
-              <span className="bg-gradient-to-r from-[#FFB454] to-[#ff8a4c] bg-clip-text text-transparent">finds you</span>
+              <span className="bg-gradient-to-r from-[#8B5CF6] to-[#A78BFA] bg-clip-text text-transparent">finds you</span>
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-pretty text-[17px] leading-7 text-muted">
@@ -100,7 +100,7 @@ export default function LandingPage() {
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link href="/app" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto shadow-[0_8px_24px_rgb(255_180_84/0.22)]">
+                <Button size="lg" className="w-full sm:w-auto shadow-[0_8px_24px_rgb(139_92_246/0.25)]">
                   Start listening — free
                 </Button>
               </Link>
@@ -117,7 +117,7 @@ export default function LandingPage() {
             <div className="relative mx-auto mt-12 max-w-2xl sm:mt-14">
               <div className="glass rounded-[24px] p-3 shadow-card sm:p-4">
                 <div className="flex items-center gap-3 rounded-2xl bg-surface-elevated px-3 py-3 sm:px-4">
-                  <div className="h-12 w-12 shrink-0 rounded-xl bg-gradient-to-br from-[#FFB454] to-[#ff6b6b] grid place-items-center text-primary-foreground shadow">
+                  <div className="h-12 w-12 shrink-0 rounded-xl bg-gradient-to-br from-[#8B5CF6] to-[#6D28D9] grid place-items-center text-primary-foreground shadow">
                     <Play size={18} className="ml-0.5" />
                   </div>
                   <div className="min-w-0 flex-1 text-left">

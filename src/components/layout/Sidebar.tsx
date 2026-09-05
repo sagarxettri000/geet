@@ -33,7 +33,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       >
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ background: "#FFB454" }}
+          style={{ background: "#8B5CF6" }}
           aria-hidden
         />
         <span className="font-display text-[22px] font-bold tracking-tight text-foreground">

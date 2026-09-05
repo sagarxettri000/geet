@@ -90,7 +90,7 @@ export function PlayAllBtn({ tracks }: { tracks: Track[] }) {
     <button
       onClick={() => tracks.length && setQueue(tracks, 0)}
       disabled={!tracks.length}
-      className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shadow"
+      className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 shadow"
     >
       <Play className="h-4 w-4 fill-current" /> Play
     </button>

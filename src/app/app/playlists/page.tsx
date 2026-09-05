@@ -50,7 +50,7 @@ export default function PlaylistsPage() {
         <h1 className="text-xl font-bold">Playlists</h1>
         <button
           onClick={() => setOpen(true)}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
         >
           <Plus className="h-4 w-4" /> New playlist
         </button>

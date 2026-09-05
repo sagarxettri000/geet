@@ -8,13 +8,13 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div
           className="absolute -top-32 left-1/2 h-[560px] w-[860px] -translate-x-1/2 rounded-full opacity-[0.10] blur-[80px]"
-          style={{ background: "radial-gradient(ellipse at center, #FFB454 0%, transparent 65%)" }}
+          style={{ background: "radial-gradient(ellipse at center, #8B5CF6 0%, transparent 65%)" }}
         />
       </div>
 
       <header className="mx-auto flex w-full max-w-[1120px] items-center justify-center px-6 py-8 sm:py-10">
         <Link href="/" className="inline-flex items-center gap-2.5 font-display text-[22px] font-bold tracking-tight">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_4px_20px_rgb(255_180_84/0.30)]">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_4px_20px_rgb(139_92_246/0.35)]">
             <Music2 size={16} className="text-primary-foreground" />
           </span>
           GEET
