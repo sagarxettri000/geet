@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Play, Loader2 } from "lucide-react";
-import { TrackCard, ArtistCard } from "@/components/cards";
+import { TrackCard } from "@/components/cards";
 import { usePlayerStore } from "@/stores/player";
 import { artworkFallback, formatDuration, formatCount, timeAgo } from "@/lib/utils";
-import type { Track, Artist, Album, Genre, YoutubeSearchHit } from "@/types/music";
+import type { Track, Genre, YoutubeSearchHit } from "@/types/music";
 
 type Section = {
   key: string;
@@ -35,12 +36,6 @@ function Carousel({ children }: { children: React.ReactNode }) {
 
 function isTrack(x: unknown): x is Track {
   return !!x && typeof x === "object" && "title" in (x as Track) && "artist" in (x as Track);
-}
-function isArtist(x: unknown): x is Artist {
-  return !!x && typeof x === "object" && "name" in (x as Artist) && "monthlyListeners" in (x as Artist);
-}
-function isAlbum(x: unknown): x is Album {
-  return !!x && typeof x === "object" && "coverUrl" in (x as Album) && "artist" in (x as Album);
 }
 function isGenre(x: unknown): x is Genre {
   return !!x && typeof x === "object" && "slug" in (x as Genre);
@@ -166,61 +161,20 @@ export default function HomeClient({ sections }: { sections: Section[] }) {
           );
         }
 
-        if (key === "artists" && items.some(isArtist)) {
-          return (
-            <section key={key}>
-              <SectionHeader title={sec.title} subtitle={sec.subtitle} />
-              <Carousel>
-                {(items as Artist[]).map((a) => (
-                  <div key={a.id} className="w-[160px] shrink-0 snap-start">
-                    <ArtistCard artist={a} />
-                  </div>
-                ))}
-              </Carousel>
-            </section>
-          );
-        }
-
-        if (key === "albums" && items.some(isAlbum)) {
-          return (
-            <section key={key}>
-              <SectionHeader title={sec.title} subtitle={sec.subtitle} />
-              <Carousel>
-                {(items as Album[]).map((al) => (
-                  <div
-                    key={al.id}
-                    className="w-[168px] shrink-0 snap-start rounded-2xl bg-surface p-3 hover:bg-surface-elevated transition-colors"
-                  >
-                    <div className="aspect-square overflow-hidden rounded-xl bg-card">
-                      {al.coverUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={al.coverUrl} alt={al.title} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="h-full w-full" style={{ background: artworkFallback(al.title) }} />
-                      )}
-                    </div>
-                    <p className="mt-2 truncate text-sm font-semibold">{al.title}</p>
-                    <p className="truncate text-xs text-muted">{al.artist}</p>
-                  </div>
-                ))}
-              </Carousel>
-            </section>
-          );
-        }
-
         if (key === "genres" && items.some(isGenre)) {
           return (
             <section key={key}>
               <SectionHeader title={sec.title} subtitle={sec.subtitle} />
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
                 {(items as Genre[]).map((g) => (
-                  <div
+                  <Link
                     key={g.id}
-                    className="shrink-0 flex h-20 w-36 items-center justify-center rounded-2xl border border-border px-3 text-center text-sm font-semibold"
+                    href={`/app/search?q=${encodeURIComponent(g.name)}`}
+                    className="shrink-0 flex h-20 w-36 items-center justify-center rounded-2xl border border-border px-3 text-center text-sm font-semibold transition-transform hover:scale-105"
                     style={{ background: g.thumbnailColor ?? artworkFallback(g.name) }}
                   >
                     <span className="drop-shadow text-white">{g.name}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </section>

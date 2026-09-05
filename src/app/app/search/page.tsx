@@ -36,7 +36,11 @@ function SkeletonRow() {
 }
 
 export default function SearchPage() {
-  const [query, setQuery] = useState("");
+  // pre-fill the box when arriving via a genre chip, e.g. /app/search?q=Hip+Hop
+  const [query, setQuery] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") ?? "";
+  });
   const debounced = useDebounced(query.trim(), 300);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);

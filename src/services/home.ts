@@ -4,15 +4,12 @@ import { trendingYouTubeMusic } from "@/lib/youtube/data-api";
 import type { HomeSection } from "@/types/music";
 
 export async function buildHomeFeed(userId: string) {
-  const [continueListening, recentlyPlayed, trending, youtubeTrending, releases, artists, albums, genres, likedTracksFeed, recommendations] =
+  const [continueListening, recentlyPlayed, youtubeTrending, releases, genres, likedTracksFeed, recommendations] =
     await Promise.all([
       loadContinueListening(userId),
       loadRecentlyPlayed(userId),
-      loadTrending(userId),
       loadYouTubeTrending(),
       loadNewReleases(userId),
-      loadTopArtists(userId),
-      loadTopAlbums(),
       loadGenres(userId),
       loadLikedTracks(userId),
       loadRecommendations(userId),
@@ -57,13 +54,6 @@ export async function buildHomeFeed(userId: string) {
   }
 
   sections.push({
-    key: "trending",
-    title: "Trending now",
-    subtitle: "The hottest tracks in GEET",
-    items: trending,
-  });
-
-  sections.push({
     key: "new-releases",
     title: "New releases",
     subtitle: "Fresh drops, just added",
@@ -78,20 +68,6 @@ export async function buildHomeFeed(userId: string) {
       items: likedTracksFeed,
     });
   }
-
-  sections.push({
-    key: "artists",
-    title: "Popular artists",
-    subtitle: "Follow the ones you click with",
-    items: artists,
-  });
-
-  sections.push({
-    key: "albums",
-    title: "Popular albums",
-    subtitle: "Full-length favourites",
-    items: albums,
-  });
 
   sections.push({
     key: "genres",
@@ -149,15 +125,6 @@ async function loadRecentlyPlayed(userId: string) {
     track: trackToDTO(row.track),
     playedAt: row.playedAt.toISOString(),
   }));
-}
-
-async function loadTrending(userId: string) {
-  const tracks = await db.track.findMany({
-    include: { sources: true },
-    orderBy: [{ popularity: "desc" }],
-    take: 20,
-  });
-  return attachLikes(tracks, userId);
 }
 
 interface RecommendationRow {
@@ -270,50 +237,12 @@ async function loadNewReleases(userId: string) {
     orderBy: { createdAt: "desc" },
     take: 20,
   });
-  return attachLikes(tracks, userId);
-}
-
-async function loadTopArtists(userId: string) {
-  const artists = await db.artist.findMany({
-    orderBy: [{ monthlyListeners: "desc" }, { followers: "desc" }],
-    take: 12,
+  const liked = await db.likedTrack.findMany({
+    where: { userId, trackId: { in: tracks.map((t) => t.id) } },
+    select: { trackId: true },
   });
-  const following = await db.followedArtist.findMany({
-    where: { userId },
-    select: { artistId: true },
-  });
-  const set = new Set(following.map((f) => f.artistId));
-  return artists.map((a) => ({
-    id: a.id,
-    name: a.name,
-    imageUrl: a.imageUrl,
-    thumbnailColor: a.thumbnailColor,
-    verified: a.verified,
-    bio: a.bio,
-    followers: a.followers,
-    monthlyListeners: a.monthlyListeners,
-    isFollowing: set.has(a.id),
-  }));
-}
-
-async function loadTopAlbums() {
-  const albums = await db.album.findMany({
-    include: { _count: { select: { tracks: true } } },
-    orderBy: [{ tracks: { _count: "desc" } }],
-    take: 16,
-  });
-  return albums.map((a) => ({
-    id: a.id,
-    title: a.title,
-    artistId: a.artistId,
-    artist: a.artistName,
-    coverUrl: a.coverUrl,
-    thumbnailColor: a.thumbnailColor,
-    year: a.year,
-    type: a.type,
-    trackCount: a._count.tracks,
-    durationSec: null,
-  }));
+  const set = new Set(liked.map((l) => l.trackId));
+  return tracks.map((t) => trackToDTO(t, { liked: set.has(t.id) }));
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -348,16 +277,4 @@ async function loadLikedTracks(userId: string) {
     take: 20,
   });
   return rows.map((r) => trackToDTO(r.track, { liked: true }));
-}
-
-async function attachLikes(
-  tracks: Array<{ id: string; sources: unknown[] }>,
-  userId: string
-) {
-  const liked = await db.likedTrack.findMany({
-    where: { userId, trackId: { in: tracks.map((t) => t.id) } },
-    select: { trackId: true },
-  });
-  const set = new Set(liked.map((l) => l.trackId));
-  return tracks.map((t) => trackToDTO(t as any, { liked: set.has(t.id) }));
 }
