@@ -37,15 +37,15 @@ function SearchBar() {
       }}
       onClick={() => inputRef.current?.focus()}
       className={cn(
-        "group relative flex w-full items-center rounded-[14px] border bg-[rgba(60,59,64,0.85)] backdrop-blur transition-all duration-200",
-        "border-[rgba(255,255,255,0.20)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
+        "group relative flex h-12 w-full items-center rounded-[12px] border bg-[rgba(60,59,64,0.85)] backdrop-blur transition-all duration-200",
+        "border-[rgba(255,255,255,0.20)] shadow-[0_4px_16px_rgba(0,0,0,0.35)]",
         focused &&
-          "border-[rgba(255,255,255,0.38)] shadow-[0_8px_32px_rgba(0,0,0,0.45),0_0_0_1px_rgba(99,102,241,0.18),0_0_24px_rgba(99,102,241,0.16)]"
+          "border-[rgba(255,255,255,0.38)] shadow-[0_4px_20px_rgba(0,0,0,0.45),0_0_0_1px_rgba(99,102,241,0.18),0_0_20px_rgba(99,102,241,0.16)]"
       )}
     >
       {/* magnifying-glass icon */}
-      <span className="pointer-events-none absolute left-[30px] flex items-center pl-0">
-        <Search className="h-[26px] w-[26px] text-[#A6A7AC]" strokeWidth={2.5} aria-hidden />
+      <span className="pointer-events-none absolute left-[16px] flex items-center">
+        <Search className="h-5 w-5 text-[#A6A7AC]" strokeWidth={2.5} aria-hidden />
       </span>
 
       <input
@@ -62,7 +62,7 @@ function SearchBar() {
           }
         }}
         placeholder="Search songs, albums, artists, podcasts"
-        className="w-full bg-transparent py-4 pl-[74px] pr-11 font-sans text-base text-foreground placeholder:text-[#A8A9AD] placeholder:font-normal outline-none sm:text-lg md:text-[22px]"
+        className="h-12 w-full bg-transparent py-0 pl-11 pr-10 font-sans text-[15px] text-foreground placeholder:text-[#A8A9AD] placeholder:font-normal outline-none sm:text-base"
         aria-label="Search"
       />
 
@@ -72,9 +72,9 @@ function SearchBar() {
           type="button"
           onClick={clear}
           aria-label="Clear search"
-          className="absolute right-[30px] flex h-6 w-6 items-center justify-center rounded-full bg-[rgba(255,255,255,0.10)] text-[#A6A7AC] transition-colors hover:bg-[rgba(255,255,255,0.18)] hover:text-white"
+          className="absolute right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(255,255,255,0.10)] text-[#A6A7AC] transition-colors hover:bg-[rgba(255,255,255,0.18)] hover:text-white"
         >
-          <X className="h-4 w-4" strokeWidth={2.5} />
+          <X className="h-3.5 w-3.5" strokeWidth={2.5} />
         </button>
       )}
     </form>
@@ -114,7 +114,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
 
       {/* Search bar — centered, near the top, up to ~820px wide */}
       <div className="flex flex-1 justify-center">
-        <div className="w-full max-w-[820px]">
+        <div className="w-full max-w-[640px]">
           <SearchBar />
         </div>
       </div>
