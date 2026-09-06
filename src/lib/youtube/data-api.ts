@@ -200,7 +200,32 @@ export async function trendingYouTubeMusic(
   url.searchParams.set("key", key);
 
   const res = await fetchJson(trendingResponseSchema, url);
-  return res.items.map((it) => ({
+  return res.items.map(mapTrendingItem);
+}
+
+// Podcasts have no dedicated chart category, so the closest honest proxy is
+// YouTube's most-popular list for "People & Blogs" (22) in the user's region.
+export async function trendingYouTubePodcasts(
+  regionCode = "IN",
+  maxResults = 30
+): Promise<YoutubeSearchHit[]> {
+  const key = apiKey();
+  const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+  url.searchParams.set("part", "snippet,contentDetails,statistics");
+  url.searchParams.set("chart", "mostPopular");
+  url.searchParams.set("videoCategoryId", "22"); // People & Blogs
+  url.searchParams.set("regionCode", regionCode);
+  url.searchParams.set("maxResults", String(maxResults));
+  url.searchParams.set("key", key);
+
+  const res = await fetchJson(trendingResponseSchema, url);
+  return res.items.map(mapTrendingItem);
+}
+
+function mapTrendingItem(
+  it: z.infer<typeof trendingResponseSchema>["items"][number]
+): YoutubeSearchHit {
+  return {
     videoId: it.id,
     title: it.snippet.title,
     channelTitle: it.snippet.channelTitle,
@@ -210,7 +235,7 @@ export async function trendingYouTubeMusic(
     durationSec: parseIsoDuration(it.contentDetails.duration ?? ""),
     viewCount: it.statistics?.viewCount ? Number(it.statistics.viewCount) : null,
     likeCount: it.statistics?.likeCount ? Number(it.statistics.likeCount) : null,
-  }));
+  };
 }
 
 async function fetchDurations(videoIds: string[]) {
