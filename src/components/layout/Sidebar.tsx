@@ -155,7 +155,7 @@ export function Sidebar({
 
       {/* Mobile sheet */}
       {open && (
-        <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <button
             aria-label="Close sidebar"
             onClick={onClose}

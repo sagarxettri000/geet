@@ -14,9 +14,9 @@
   --border-strong: 255 255 255 / 0.14;
   --foreground: #ffffff;
   --muted: #a1a1aa;
-  --muted-2: #6c6c76;
-  --primary: #8b5cf6;
-  --primary-hover: #a78bfa;
+  --muted-2: #8a8a94;
+  --primary: #7c3aed;
+  --primary-hover: #8b5cf6;
   --primary-foreground: #ffffff;
   --primary-soft: 139 92 246 / 0.16;
   --accent: #ff6b6b;
@@ -46,7 +46,7 @@
   --border-strong: 15 15 17 / 0.16;
   --foreground: #1c1c1f;
   --muted: #5c5a60;
-  --muted-2: #8a888f;
+  --muted-2: #6d6a73;
   --primary: #7c3aed;
   --primary-hover: #6d28d9;
   --primary-foreground: #ffffff;

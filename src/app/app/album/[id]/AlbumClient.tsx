@@ -57,11 +57,11 @@ export function AlbumTrackList({
             <p className="truncate text-xs text-muted">{t.artist}</p>
           </div>
           <span className="hidden text-xs text-muted sm:block">{formatDuration(t.durationSec)}</span>
-          <button onClick={() => toggleLike(t.id)} className={`p-2 rounded-full hover:bg-surface ${t.id && likes.has(t.id) ? "text-primary" : "text-muted"}`}>
+          <button onClick={() => toggleLike(t.id)} aria-label={t.id && likes.has(t.id) ? `Unlike ${t.title}` : `Like ${t.title}`} className={`p-2 rounded-full hover:bg-surface ${t.id && likes.has(t.id) ? "text-primary" : "text-muted"}`}>
             <Heart className={`h-4 w-4 ${t.id && likes.has(t.id) ? "fill-current" : ""}`} />
           </button>
           <div className="relative">
-            <button onClick={() => setOpenId(openId === t.id ? null : t.id ?? null)} className="p-2 rounded-full hover:bg-surface text-muted">
+            <button onClick={() => setOpenId(openId === t.id ? null : t.id ?? null)} aria-label={`Add ${t.title} to playlist`} className="p-2 rounded-full hover:bg-surface text-muted">
               <Plus className="h-4 w-4" />
             </button>
             {openId === t.id && playlists.length > 0 && (
@@ -74,7 +74,7 @@ export function AlbumTrackList({
               </div>
             )}
           </div>
-          <button onClick={() => setQueue(tracks, i)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => setQueue(tracks, i)} aria-label={`Play ${t.title}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity">
             <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
           </button>
         </div>

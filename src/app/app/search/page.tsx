@@ -133,9 +133,12 @@ function SearchPage() {
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Search</h1>
       <div className="relative max-w-[640px]">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <label htmlFor="global-search" className="sr-only">Search songs, artists, albums, playlists</label>
         <input
+          id="global-search"
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}

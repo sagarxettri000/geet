@@ -141,7 +141,10 @@ export default function SignupPage() {
         </Button>
 
         <p className="text-center text-xs leading-4 text-muted-2">
-          By creating an account you agree to GEET&apos;s terms.
+          By creating an account you agree to GEET&apos;s{" "}
+          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">terms</Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">privacy policy</Link>.
         </p>
       </form>
 

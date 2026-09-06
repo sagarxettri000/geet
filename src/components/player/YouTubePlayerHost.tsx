@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { usePlayerStore } from "@/stores/player";
 import { trackEvent } from "@/lib/client-events";
+import { readConsent, writeConsent } from "@/lib/consent";
 import type { Track } from "@/types/music";
 
 type YTPlayer = {
@@ -383,6 +384,18 @@ export default function YouTubePlayerHost() {
         // creation succeeded; onReady will load due to videoIdRef
         return;
       }
+      // API not loaded yet (script load was deferred until this play action) —
+      // load it, then create the player once it's ready.
+      if (!window.YT?.Player) {
+        void loadYouTubeAPI().then(() => {
+          if (playerRef.current) return;
+          const p = ensurePlayer(vid);
+          if (p) {
+            if (readyRef.current) playVideoOn(p, vid);
+          }
+        });
+        return;
+      }
       // API still loading or creation raced — poll until we can
       const t = setInterval(() => {
         if (window.YT?.Player && !playerRef.current) {
@@ -412,9 +425,17 @@ export default function YouTubePlayerHost() {
   );
   const tryBootstrapRef = useRef(false);
 
-  // Load the YouTube IFrame API once (no player creation here!)
+  // Load the YouTube IFrame API once (no player creation here!). We defer
+  // this third-party script load until a consent choice exists (or the user's
+  // first play action, handled by bootstrap) so no YouTube code runs before
+  // the user has been informed.
   useEffect(() => {
     let cancelled = false;
+    const consent = readConsent();
+    if (!consent || consent.youtube === false) {
+      debug("api-deferred");
+      return;
+    }
     if (hostBusy) return;
     hostBusy = true;
     loadYouTubeAPI().then((ok) => {
@@ -458,6 +479,7 @@ export default function YouTubePlayerHost() {
     }
     const sameVideo = vid === videoIdRef.current;
     videoIdRef.current = vid;
+    if (!readConsent()) writeConsent({ state: "accepted" });
     log("track change", vid, "same:", sameVideo, "player:", !!playerRef.current, "ready:", readyRef.current);
     const p = playerRef.current;
     if (p && readyRef.current) {

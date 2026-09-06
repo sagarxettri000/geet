@@ -7,10 +7,13 @@ export default async function HomePage() {
   const userId = session!.user.id;
   const first = await getHomeFeedPage(userId, { limit: 60 });
   return (
-    <HomeClient
-      initialItems={first.items}
-      initialCursor={first.nextCursor}
-      initialHasMore={first.hasMore}
-    />
+    <>
+      <h1 className="sr-only">Home</h1>
+      <HomeClient
+        initialItems={first.items}
+        initialCursor={first.nextCursor}
+        initialHasMore={first.hasMore}
+      />
+    </>
   );
 }

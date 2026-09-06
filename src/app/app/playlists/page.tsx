@@ -111,26 +111,34 @@ export default function PlaylistsPage() {
       )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="new-playlist-title">
           <button aria-label="Close" onClick={() => setOpen(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative w-full max-w-md rounded-2xl border border-border bg-background-elevated p-5 shadow-float">
-            <h2 className="text-base font-semibold">New playlist</h2>
+            <h2 id="new-playlist-title" className="text-base font-semibold">New playlist</h2>
             <p className="text-xs text-muted">Give it a name. You can add tracks later.</p>
             <div className="mt-4 space-y-3">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Playlist name"
-                maxLength={60}
-                className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <input
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="Description (optional)"
-                maxLength={280}
-                className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <div>
+                <label htmlFor="playlist-name" className="sr-only">Playlist name</label>
+                <input
+                  id="playlist-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Playlist name"
+                  maxLength={60}
+                  className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label htmlFor="playlist-desc" className="sr-only">Description (optional)</label>
+                <input
+                  id="playlist-desc"
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="Description (optional)"
+                  maxLength={280}
+                  className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
               {err && <p className="text-xs text-danger">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setOpen(false)} className="rounded-full px-4 py-2 text-sm hover:bg-surface">Cancel</button>

@@ -6,12 +6,12 @@ const features = [
   {
     icon: Search,
     title: "Search everything",
-    desc: "Type any song, artist, or genre — GEET finds real YouTube and catalog results and plays them instantly.",
+    desc: "Type any song, artist, or genre — GEET finds YouTube results and plays them in a custom player.",
   },
   {
     icon: Play,
     title: "Custom player",
-    desc: "A beautiful, precise player with queue, shuffle, repeat and keyboard controls. No embeds.",
+    desc: "A precise player with queue, shuffle, repeat and keyboard controls.",
   },
   {
     icon: Library,
@@ -78,14 +78,14 @@ export default function LandingPage() {
       </header>
 
       {/* hero */}
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <section className="mx-auto max-w-[1120px] px-6 pt-16 pb-10 sm:pt-24 sm:pb-16">
           <div className="mx-auto max-w-3xl text-center">
             <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted">
               <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
                 <Sparkles size={12} />
               </span>
-              Premium music streaming — no API key required
+              Free music streaming — powered by YouTube
             </div>
 
             <h1 className="mt-6 font-display text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-[56px] lg:leading-[1.05]">
@@ -95,7 +95,8 @@ export default function LandingPage() {
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-pretty text-[17px] leading-7 text-muted">
-              Search any song, build playlists, and play with a beautiful custom player. GEET is fast, private, and self-hosted.
+              Search any song, build playlists, and play in a custom player. Free, private, and
+              powered by official YouTube playback.
             </p>
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -122,10 +123,10 @@ export default function LandingPage() {
                   </div>
                   <div className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold">Midnight Echoes</span>
-                      <span className="hidden rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary sm:inline">Now playing</span>
+                      <span className="truncate text-sm font-semibold">Your song</span>
+                      <span className="hidden rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary sm:inline">Sample player</span>
                     </div>
-                    <span className="truncate text-xs text-muted">A. K. Soren · 3:42</span>
+                    <span className="truncate text-xs text-muted">Artist name · 3:42</span>
                   </div>
                   <div className="hidden h-1.5 w-24 rounded-full bg-border sm:block">
                     <div className="h-full w-[62%] rounded-full bg-primary" />
@@ -133,9 +134,9 @@ export default function LandingPage() {
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-3 text-left">
                   {[
-                    ["∞", "songs to discover"],
-                    ["1 tap", "search → play"],
-                    ["∞", "playlists"],
+                    ["Free", "no subscription"],
+                    ["Personal", "your own feed"],
+                    ["Private", "no ad tracking"],
                   ].map(([v, k]) => (
                     <div key={k} className="rounded-2xl bg-surface px-3 py-3 sm:px-4">
                       <div className="text-sm font-bold tracking-tight">{v}</div>
@@ -170,7 +171,7 @@ export default function LandingPage() {
           <div className="glass mt-8 flex flex-col items-center justify-between gap-4 rounded-2xl p-6 sm:flex-row sm:p-8">
             <div>
               <h3 className="font-display text-lg font-semibold">Ready to hear it?</h3>
-              <p className="mt-1 text-sm text-muted">Pick a song and hit play. Fast, free, no setup.</p>
+              <p className="mt-1 text-sm text-muted">Pick a song and hit play. Free and private.</p>
             </div>
             <div className="flex gap-3">
               <Link href="/app">
@@ -192,10 +193,15 @@ export default function LandingPage() {
             </span>
             © {new Date().getFullYear()} GEET — Where great music finds you.
           </span>
-          <span className="flex gap-4">
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <Link href="/login" className="hover:text-muted">Sign in</Link>
             <Link href="/signup" className="hover:text-muted">Sign up</Link>
             <Link href="/app" className="hover:text-muted">App</Link>
+            <Link href="/privacy" className="hover:text-muted">Privacy</Link>
+            <Link href="/terms" className="hover:text-muted">Terms</Link>
+            <Link href="/cookies" className="hover:text-muted">Cookies</Link>
+            <Link href="/refunds" className="hover:text-muted">Refunds</Link>
+            <Link href="/contact" className="hover:text-muted">Contact</Link>
           </span>
         </div>
       </footer>

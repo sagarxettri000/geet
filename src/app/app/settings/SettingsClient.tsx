@@ -35,7 +35,7 @@ export function SettingsClient({ initial }: { initial: Pref }) {
     <div className="space-y-5">
       <div className="rounded-2xl border border-border glass p-5">
         <h2 className="text-sm font-semibold">Appearance</h2>
-        <p className="text-xs text-muted">Toggle theme. Electric purple #8B5CF6 is the primary accent in both modes.</p>
+        <p className="text-xs text-muted">Toggle between dark and light appearance.</p>
         <div className="mt-3 flex gap-2">
           {(["dark", "light"] as const).map((t) => (
             <button

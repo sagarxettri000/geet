@@ -126,6 +126,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
           className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-2.5 transition-colors hover:bg-surface-elevated"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
+          aria-label={user?.name ?? user?.email ?? "Account menu"}
         >
           {user?.image ? (
             // eslint-disable-next-line @next/next/no-img-element

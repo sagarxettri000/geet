@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { trackToDTO, albumToDTO, artistToDTO } from "@/services/music";
-import { formatListeners, artworkFallback } from "@/lib/utils";
+import { artworkFallback } from "@/lib/utils";
 import { BadgeCheck } from "lucide-react";
 import { ArtistActions, TrackList } from "./ArtistClient";
 
@@ -57,11 +57,6 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
               {artist.verified && <BadgeCheck className="h-5 w-5 shrink-0 text-primary fill-primary/20" />}
             </div>
             {artist.bio && <p className="mt-1 line-clamp-2 text-xs text-muted md:text-sm">{artist.bio}</p>}
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
-              <span>{formatListeners(artist.followers)} followers</span>
-              <span>·</span>
-              <span>{formatListeners(artist.monthlyListeners)} monthly listeners</span>
-            </div>
             <div className="mt-3">
               <ArtistActions artistId={artist.id} initialFollowing={isFollowing} tracks={tracks} />
             </div>

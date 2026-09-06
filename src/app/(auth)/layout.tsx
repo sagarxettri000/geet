@@ -21,14 +21,27 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </Link>
       </header>
 
-      <main className="flex flex-1 items-start justify-center px-4 pb-12 sm:items-center">
+      <main id="main-content" className="flex flex-1 items-start justify-center px-4 pb-12 sm:items-center">
         <div className="w-full max-w-[420px] glass rounded-2xl p-6 shadow-float sm:p-8">{children}</div>
       </main>
 
       <footer className="px-6 py-6 text-center text-xs text-muted-2">
-        <Link href="/" className="hover:text-muted underline-offset-4 hover:underline">
-          ← Back to home
-        </Link>
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+          <Link href="/" className="hover:text-muted underline-offset-4 hover:underline">
+            ← Back to home
+          </Link>
+          {[
+            ["/privacy", "Privacy"],
+            ["/terms", "Terms"],
+            ["/cookies", "Cookies"],
+            ["/refunds", "Refunds"],
+            ["/contact", "Contact"],
+          ].map(([href, label]) => (
+            <Link key={href} href={href} className="hover:text-muted underline-offset-4 hover:underline">
+              {label}
+            </Link>
+          ))}
+        </div>
       </footer>
     </div>
   );

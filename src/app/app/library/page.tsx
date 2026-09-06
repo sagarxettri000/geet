@@ -71,7 +71,9 @@ export default function LibraryPage() {
         <h1 className="text-xl font-bold">Your Library</h1>
         <div className="ml-auto flex items-center gap-2">
           <div className="relative">
+            <label htmlFor="library-filter" className="sr-only">Filter your library</label>
             <input
+              id="library-filter"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Filter"
@@ -119,7 +121,7 @@ export default function LibraryPage() {
                     <p className="truncate text-sm font-medium">{t.title}</p>
                     <p className="truncate text-xs text-muted">{t.artist} · {formatDuration(t.durationSec)}</p>
                   </div>
-                  <button onClick={() => setQueue(filteredLiked, i)} className="h-8 w-8 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
+                  <button onClick={() => setQueue(filteredLiked, i)} aria-label={`Play ${t.title}`} className="h-8 w-8 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
                     <Play className="h-4 w-4 fill-current ml-0.5" />
                   </button>
                 </div>
@@ -166,7 +168,7 @@ export default function LibraryPage() {
                     <p className="truncate text-sm font-medium">{r.track.title}</p>
                     <p className="truncate text-xs text-muted">{r.track.artist}</p>
                   </div>
-                  <button onClick={() => playTrack(r.track)} className="h-8 w-8 inline-flex items-center justify-center rounded-full bg-surface border border-border">
+                  <button onClick={() => playTrack(r.track)} aria-label={`Play ${r.track.title}`} className="h-8 w-8 inline-flex items-center justify-center rounded-full bg-surface border border-border">
                     <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
                   </button>
                 </div>

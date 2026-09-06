@@ -106,7 +106,7 @@ export function TrackList({
             <p className="truncate text-sm font-medium">{t.title}</p>
             <p className="truncate text-xs text-muted">{t.artist} · {formatDuration(t.durationSec)}</p>
           </div>
-          <button onClick={() => toggleLike(t.id)} className={`p-2 rounded-full hover:bg-surface ${t.id && likes.has(t.id) ? "text-primary" : "text-muted"}`}>
+          <button onClick={() => toggleLike(t.id)} aria-label={t.id && likes.has(t.id) ? `Unlike ${t.title}` : `Like ${t.title}`} className={`p-2 rounded-full hover:bg-surface ${t.id && likes.has(t.id) ? "text-primary" : "text-muted"}`}>
             <Heart className={`h-4 w-4 ${t.id && likes.has(t.id) ? "fill-current" : ""}`} />
           </button>
           {playlists?.length ? (
@@ -123,7 +123,7 @@ export function TrackList({
               )}
             </div>
           ) : null}
-          <button onClick={() => (t.id ? setQueue(tracks, i) : playTrack(t))} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => (t.id ? setQueue(tracks, i) : playTrack(t))} aria-label={`Play ${t.title}`} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity">
             <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
           </button>
         </div>

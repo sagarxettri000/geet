@@ -8,6 +8,7 @@ import { PlayerBar } from "@/components/player/PlayerBar";
 import YouTubePlayerHost from "@/components/player/YouTubePlayerHost";
 import { usePlayerStore } from "@/stores/player";
 import { ToastProvider } from "@/components/ui/toast";
+import Link from "next/link";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -40,10 +41,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <TopBar onMenuClick={() => setSidebarOpen(true)} />
 
           {/* scrollable content */}
-          <main className="flex-1 overflow-y-auto pb-28 lg:pb-24">
+          <main id="main-content" className="flex-1 overflow-y-auto pb-28 lg:pb-24">
             <div className="mx-auto w-full max-w-[1280px] px-4 py-6 lg:px-6">
               {children}
             </div>
+            <footer className="mx-auto w-full max-w-[1280px] px-4 pb-6 lg:px-6">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-4 text-xs text-muted">
+                {[
+                  ["/privacy", "Privacy"],
+                  ["/terms", "Terms"],
+                  ["/cookies", "Cookies"],
+                  ["/refunds", "Refunds"],
+                  ["/contact", "Contact"],
+                ].map(([href, label]) => (
+                  <Link key={href} href={href} className="hover:text-foreground">
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </footer>
           </main>
 
           <MobileNav />
