@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { Search, Play, Clock, X, Loader2 } from "lucide-react";
 import { usePlayerStore } from "@/stores/player";
@@ -35,12 +36,11 @@ function SkeletonRow() {
   );
 }
 
-export default function SearchPage() {
-  // pre-fill the box when arriving via a genre chip, e.g. /app/search?q=Hip+Hop
-  const [query, setQuery] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return new URLSearchParams(window.location.search).get("q") ?? "";
-  });
+function SearchPage() {
+  // keep the input in sync with ?q= from the top bar (and reflect every
+  // navigation, not just the first mount)
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState<string>(() => searchParams.get("q") ?? "");
   const debounced = useDebounced(query.trim(), 300);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -410,5 +410,15 @@ export default function SearchPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function SearchPageRoute() {
+  const searchParams = useSearchParams();
+  const q = searchParams.get("q") ?? "";
+  return (
+    <Suspense fallback={<div className="py-10 text-sm text-muted">Loading search…</div>}>
+      <SearchPage key={q} />
+    </Suspense>
   );
 }
