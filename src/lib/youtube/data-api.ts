@@ -290,7 +290,7 @@ async function computeTrendingPodcasts(maxResults: number): Promise<YoutubeSearc
   const key = apiKey();
   const results = await Promise.allSettled(
     PODCAST_TRENDING_CHANNELS.map(({ handle, seedId }) =>
-      channelUploads(handle, seedId, key, 8)
+      channelUploads(handle, seedId, key, 15)
     )
   );
 
