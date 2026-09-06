@@ -78,7 +78,7 @@ export const FEED = {
   defaultPageSize: 30,
   maxLimit: 100,
   freshNewDays: 30,
-  dismissImpressions: 3,
+  dismissImpressions: 5,
   signalWindowDays: 30,
 };
 
@@ -91,6 +91,7 @@ export const MIX = {
   exploration: 3,
   popular: 0,
   heard: 0,
+  ignored: 0,
 } as const;
 
 export const EXPLORATION = {

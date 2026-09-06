@@ -8,8 +8,10 @@ export type FeedCat =
   | "fresh"
   | "exploration"
   | "popular"
-  | "heard";
+  | "heard"
+  | "ignored";
 
+// Order matters: ignored (demoted, seen-but-never-played) always sits last.
 export const CAT_ORDER: FeedCat[] = [
   "personalized",
   "similar",
@@ -19,6 +21,7 @@ export const CAT_ORDER: FeedCat[] = [
   "exploration",
   "popular",
   "heard",
+  "ignored",
 ];
 
 const QUOTA_CATS: FeedCat[] = [
@@ -29,6 +32,8 @@ const QUOTA_CATS: FeedCat[] = [
   "fresh",
   "exploration",
 ];
+
+const TOPUP_CATS: FeedCat[] = ["popular", "heard"];
 
 export type QueueLayout = Record<FeedCat, string[]>;
 
@@ -72,9 +77,7 @@ export function decodeCursor(
       q?: unknown;
     };
     if (typeof raw.v !== "string" || !Array.isArray(raw.q)) return null;
-    const pointers = raw.q.map((n) =>
-      Math.max(0, Math.floor(Number(n) || 0))
-    );
+    const pointers = raw.q.map((n) => Math.max(0, Math.floor(Number(n) || 0)));
     return { seed: raw.v.slice(0, 64), pointers };
   } catch {
     return null;
@@ -83,49 +86,64 @@ export function decodeCursor(
 
 export interface ComposeResult {
   ids: string[];
+  nextPointers: number[];
   hasMore: boolean;
 }
 
+// Pulls one feed page from the per-category queues. A track lives in exactly
+// one category (enforced at build time), so pointers never re-serve anything.
 export function composeNext(
   queues: QueueLayout,
   pointers: number[],
   limit: number
-): ComposeResult & { nextPointers: number[] } {
-  const nextPointers = CAT_ORDER.map(
-    (cat, i) => pointers[i] ?? 0
-  );
+): ComposeResult {
+  const nextPointers = CAT_ORDER.map((cat, i) => pointers[i] ?? 0);
   const wanted = Math.max(0, limit);
   const out: string[] = [];
+  const used = new Set<string>();
 
   const takeFrom = (cat: FeedCat, max: number) => {
     const q = queues[cat] ?? [];
     const i = CAT_ORDER.indexOf(cat);
     const start = Math.min(nextPointers[i], q.length);
     const n = Math.min(max, q.length - start);
-    for (let k = 0; k < n; k++) out.push(q[start + k]);
+    for (let k = 0; k < n; k++) {
+      const id = q[start + k];
+      if (!used.has(id)) {
+        used.add(id);
+        out.push(id);
+      }
+    }
     nextPointers[i] = start + n;
   };
 
-  const totalWeight =
-    QUOTA_CATS.reduce((sum, cat) => sum + (MIX[cat] ?? 0), 0) || 1;
+  const totalWeight = QUOTA_CATS.reduce(
+    (sum, cat) => sum + (MIX[cat] ?? 0),
+    0
+  ) || 1;
 
   for (const cat of QUOTA_CATS) {
     if (out.length >= wanted) break;
-    const share = Math.max(
-      1,
-      Math.round(((MIX[cat] ?? 0) / totalWeight) * wanted)
-    );
+    const share = Math.max(1, Math.round((MIX[cat] / totalWeight) * wanted));
     takeFrom(cat, Math.min(share, wanted - out.length));
   }
 
-  for (const cat of ["popular", "heard"] as FeedCat[]) {
+  for (const cat of TOPUP_CATS) {
     if (out.length >= wanted) break;
     takeFrom(cat, wanted - out.length);
   }
 
-  for (const cat of QUOTA_CATS) {
-    if (out.length >= wanted) break;
-    takeFrom(cat, wanted - out.length);
+  // Rebalance: fill any remaining slots from whatever is left, ignoring the
+  // demoted "ignored" bucket until everything else is truly exhausted.
+  for (let pass = 0; pass < 3 && out.length < wanted; pass++) {
+    for (const cat of [...QUOTA_CATS, ...TOPUP_CATS] as FeedCat[]) {
+      if (out.length >= wanted) break;
+      takeFrom(cat, wanted - out.length);
+    }
+  }
+
+  if (out.length < wanted) {
+    takeFrom("ignored", wanted - out.length);
   }
 
   const hasMore = CAT_ORDER.some(

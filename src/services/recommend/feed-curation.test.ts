@@ -96,9 +96,42 @@ test("composeNext never repeats ids within a page and continents via cursor", ()
 
 test("composeNext reports hasMore=false once every queue is exhausted", () => {
   const queues = layout({ personalized: ids("p", 6) });
-  const first = composeNext(queues, [0, 0, 0, 0, 0, 0, 0, 0], 30);
+  const first = composeNext(queues, [0, 0, 0, 0, 0, 0, 0, 0, 0], 30);
   assert.equal(first.ids.length, 6);
   assert.equal(first.hasMore, false);
+});
+
+test("composeNext only reaches the ignored bucket after everything else", () => {
+  const queues = layout({
+    popular: ids("po", 10),
+    heard: ids("h", 10),
+    ignored: ids("ig", 50),
+  });
+  const pointers = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ];
+  const first = composeNext(queues, pointers, 30);
+  assert.equal(first.ids.length, 30);
+  assert.equal(first.ids.filter((id) => id.startsWith("ig-")).length, 10);
+  const second = composeNext(queues, first.nextPointers, 30);
+  assert.equal(second.ids.length, 30);
+  assert.ok(second.ids.every((id) => id.startsWith("ig-")));
+  assert.equal(composeNext(queues, second.nextPointers, 10).ids.length, 10);
+});
+
+test("composeNext never re-serves a track listed in two categories", () => {
+  const dup = "shared-0";
+  const queues = layout({
+    personalized: [dup, ...ids("p", 9)],
+    similar: ids("s", 10),
+    heard: [dup, ...ids("h", 9)],
+  });
+  const first = composeNext(queues, [0, 0, 0, 0, 0, 0, 0, 0, 0], 30);
+  assert.equal(new Set(first.ids).size, first.ids.length);
+  assert.equal(first.ids.filter((id) => id === dup).length, 1);
+  const second = composeNext(queues, first.nextPointers, 30);
+  assert.equal(new Set(second.ids).size, second.ids.length);
+  assert.ok(!second.ids.includes(dup));
 });
 
 test("tagRankedSource maps raw sources to feed categories", () => {

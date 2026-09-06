@@ -188,6 +188,7 @@ async function buildPopulation(
   const metaById = new Map<string, Meta>();
 
   const exclude = new Set<string>();
+  const assigned = new Set<string>();
   let ranked: Array<{ track: Track; reason?: string; source?: string; score?: number }> = [];
   try {
     const feed = await getRankedFeed(userId, FEED.rankedCap, 0);
@@ -196,16 +197,13 @@ async function buildPopulation(
 
   for (const it of ranked) {
     const id = it.track.id;
-    if (!id || ctx.negated.has(id) || ctx.dismissed.has(id)) continue;
+    if (!id || ctx.negated.has(id) || assigned.has(id)) continue;
     exclude.add(id);
+    assigned.add(id);
     const source = it.source ?? "user_interest";
-    const cat = tagRankedSource(source);
+    const cat = ctx.dismissed.has(id) ? "ignored" : tagRankedSource(source);
     queues[cat].push(id);
-    metaById.set(id, {
-      reason: it.reason ?? source,
-      source,
-      score: it.score,
-    });
+    metaById.set(id, { reason: it.reason ?? source, source, score: it.score });
   }
 
   const trendingIds = new Set(await getTrendingTrackIds(200).catch(() => []));
@@ -220,14 +218,16 @@ async function buildPopulation(
 
   for (const t of rows) {
     const id = t.id;
-    if (ctx.negated.has(id) || ctx.dismissed.has(id)) continue;
-    const cat: FeedCat = ctx.plays.get(id)
-      ? "heard"
-      : trendingIds.has(id)
-        ? "trending"
-        : t.createdAt.getTime() > freshSince
-          ? "fresh"
-          : "popular";
+    if (ctx.negated.has(id)) continue;
+    const cat: FeedCat = ctx.dismissed.has(id)
+      ? "ignored"
+      : ctx.plays.get(id)
+        ? "heard"
+        : trendingIds.has(id)
+          ? "trending"
+          : t.createdAt.getTime() > freshSince
+            ? "fresh"
+            : "popular";
     const reason =
       cat === "heard"
         ? "in_your_history"
@@ -235,7 +235,9 @@ async function buildPopulation(
           ? "trending"
           : cat === "fresh"
             ? "new_release"
-            : "popular";
+            : cat === "ignored"
+              ? "seen_but_unplayed"
+              : "popular";
     queues[cat].push(id);
     metaById.set(id, { reason, source: cat });
   }
