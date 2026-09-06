@@ -125,10 +125,16 @@ async function searchYouTubeVideos({
   query,
   maxResults = 20,
   categoryId,
+  regionCode,
+  order,
+  withDurations = true,
 }: {
   query: string;
   maxResults?: number;
   categoryId?: string;
+  regionCode?: string;
+  order?: "relevance" | "viewCount";
+  withDurations?: boolean;
 }): Promise<YoutubeSearchHit[]> {
   const key = apiKey();
   const hits: YoutubeSearchHit[] = [];
@@ -142,6 +148,8 @@ async function searchYouTubeVideos({
     url.searchParams.set("q", query);
     url.searchParams.set("maxResults", String(Math.min(50, maxResults - hits.length)));
     if (categoryId) url.searchParams.set("videoCategoryId", categoryId);
+    if (regionCode) url.searchParams.set("regionCode", regionCode);
+    if (order) url.searchParams.set("order", order);
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     url.searchParams.set("key", key);
 
@@ -166,11 +174,17 @@ async function searchYouTubeVideos({
     pageToken = res.nextPageToken;
   }
 
-  const durations = await fetchDurations([...seen]);
+  if (withDurations) {
+    await attachDurations(hits);
+  }
+  return hits;
+}
+
+async function attachDurations(hits: YoutubeSearchHit[]) {
+  const durations = await fetchDurations(hits.map((h) => h.videoId));
   for (const hit of hits) {
     hit.durationSec = durations.get(hit.videoId) ?? null;
   }
-  return hits;
 }
 
 function pickThumbnail(
@@ -203,23 +217,59 @@ export async function trendingYouTubeMusic(
   return res.items.map(mapTrendingItem);
 }
 
-// Podcasts have no dedicated chart category, so the closest honest proxy is
-// YouTube's most-popular list for "People & Blogs" (22) in the user's region.
+// Podcasts have no dedicated chart category, so the trending rail is built by
+// searching live talk/interview/story terms (by view count) and merging them,
+// biased toward full-length episodes over Shorts/clips. Queries are rotated
+// round-robin so one broad term can't drown out the variety.
+const PODCAST_TRENDING_QUERIES: readonly string[] = [
+  "raj shamani podcast",
+  "podcast interview",
+  "podcast",
+  "storytime podcast",
+];
+
 export async function trendingYouTubePodcasts(
   regionCode = "IN",
   maxResults = 30
 ): Promise<YoutubeSearchHit[]> {
-  const key = apiKey();
-  const url = new URL("https://www.googleapis.com/youtube/v3/videos");
-  url.searchParams.set("part", "snippet,contentDetails,statistics");
-  url.searchParams.set("chart", "mostPopular");
-  url.searchParams.set("videoCategoryId", "22"); // People & Blogs
-  url.searchParams.set("regionCode", regionCode);
-  url.searchParams.set("maxResults", String(maxResults));
-  url.searchParams.set("key", key);
+  const buckets = await Promise.all(
+    PODCAST_TRENDING_QUERIES.map((q) =>
+      searchYouTubeVideos({
+        query: q,
+        maxResults: 12,
+        regionCode,
+        order: "viewCount",
+        withDurations: false,
+      })
+    )
+  );
 
-  const res = await fetchJson(trendingResponseSchema, url);
-  return res.items.map(mapTrendingItem);
+  const merged: YoutubeSearchHit[] = [];
+  const seen = new Set<string>();
+  const cursor = buckets.map(() => 0);
+  let progressed = true;
+  while (merged.length < maxResults && progressed) {
+    progressed = false;
+    for (let b = 0; b < buckets.length && merged.length < maxResults; b++) {
+      const bucket = buckets[b];
+      while (cursor[b] < bucket.length) {
+        const hit = bucket[cursor[b]++];
+        if (!hit || seen.has(hit.videoId)) continue;
+        seen.add(hit.videoId);
+        merged.push(hit);
+        progressed = true;
+        break;
+      }
+    }
+  }
+
+  await attachDurations(merged);
+
+  // Bias toward full-length episodes (>10 min) so the rail feels like a talk
+  // show instead of short clips, without dropping shorts entirely.
+  const long = merged.filter((h) => (h.durationSec ?? 0) >= 600);
+  const short = merged.filter((h) => (h.durationSec ?? 0) < 600);
+  return [...long, ...short].slice(0, maxResults);
 }
 
 function mapTrendingItem(
