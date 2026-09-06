@@ -71,6 +71,28 @@ export const RANKING_WEIGHTS = {
   exploration: 0.05,
 };
 
+export const FEED = {
+  rankedCap: 500,
+  catalogCap: 50_000,
+  cacheMs: 5 * 60 * 1000,
+  defaultPageSize: 30,
+  maxLimit: 100,
+  freshNewDays: 30,
+  dismissImpressions: 3,
+  signalWindowDays: 30,
+};
+
+export const MIX = {
+  personalized: 10,
+  similar: 6,
+  artist: 4,
+  trending: 4,
+  fresh: 3,
+  exploration: 3,
+  popular: 0,
+  heard: 0,
+} as const;
+
 export const EXPLORATION = {
   exploitationShare: 0.75,
   explorationShare: 0.15,

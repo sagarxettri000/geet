@@ -8,70 +8,82 @@ import type { Track } from "@/types/music";
 
 export default function HomeClient({
   initialItems,
-  initialNextOffset,
+  initialCursor,
   initialHasMore,
-  initialVariant,
 }: {
   initialItems: Track[];
-  initialNextOffset: number;
+  initialCursor: string | null;
   initialHasMore: boolean;
-  initialVariant: string;
 }) {
   const [items, setItems] = useState<Track[]>(initialItems);
-  const [nextOffset, setNextOffset] = useState(initialNextOffset);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState(false);
-  const [variant, setVariant] = useState(initialVariant);
   const impressed = useRef<Set<string>>(new Set());
   const sentinel = useRef<HTMLDivElement | null>(null);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
   const visibleTracks = items.filter((t) => t.id && !hidden.has(t.id));
 
-  useEffect(() => {
-    const onRefresh = () => {
-      const v = Math.random().toString(36).slice(2, 12);
-      setVariant(v);
-      setLoading(true);
-      fetch(`/api/wall?offset=0&limit=60&variant=${v}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!data) return;
-          setItems(data.items as Track[]);
-          setNextOffset(data.nextOffset as number);
-          setHasMore(data.hasMore as boolean);
-          impressed.current.clear();
-          setHidden(new Set());
-          setFlash(true);
-          setTimeout(() => setFlash(false), 1200);
-        })
-        .finally(() => setLoading(false));
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    };
-    window.addEventListener("geet:refresh-wall" as keyof WindowEventMap, onRefresh);
-    return () => window.removeEventListener("geet:refresh-wall" as keyof WindowEventMap, onRefresh);
-  }, []);
-
-  const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
+  const refreshFeed = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/wall?offset=${nextOffset}&limit=48&variant=${encodeURIComponent(variant)}`);
-      if (!res.ok) return;
+      const res = await fetch("/api/home-feed?limit=60");
+      if (!res.ok) throw new Error("failed");
       const data = await res.json();
-      setItems((prev) => {
-        const seen = new Set(prev.map((t) => t.id).filter((x): x is string => !!x));
-        const fresh = (data.items as Track[]).filter((t) => t.id && !seen.has(t.id));
-        return [...prev, ...fresh];
-      });
-      setNextOffset(data.nextOffset as number);
+      setItems(data.items as Track[]);
+      setCursor(data.nextCursor as string | null);
       setHasMore(data.hasMore as boolean);
+      impressed.current.clear();
+      setHidden(new Set());
+      setFlash(true);
+      setTimeout(() => setFlash(false), 1200);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      setError("Couldn't refresh the feed. Try again.");
     } finally {
       setLoading(false);
     }
-  }, [loading, hasMore, nextOffset, variant]);
+  }, []);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refreshFeed();
+    };
+    window.addEventListener("geet:refresh-wall" as keyof WindowEventMap, onRefresh);
+    return () =>
+      window.removeEventListener("geet:refresh-wall" as keyof WindowEventMap, onRefresh);
+  }, [refreshFeed]);
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore || !cursor) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/home-feed?limit=48&cursor=${encodeURIComponent(cursor)}`
+      );
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setItems((prev) => {
+        const seen = new Set(prev.map((t) => t.id).filter((x): x is string => !!x));
+        const fresh = (data.items as Track[]).filter(
+          (t) => t.id && !seen.has(t.id)
+        );
+        return [...prev, ...fresh];
+      });
+      setCursor(data.nextCursor as string | null);
+      setHasMore(data.hasMore as boolean);
+    } catch {
+      setError("Couldn't load more songs. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [loading, hasMore, cursor]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -84,7 +96,7 @@ export default function HomeClient({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [loadMore]);
+  }, [loadMore, hasMore]);
 
   useEffect(() => {
     const list = items.filter((t) => t.id && !hidden.has(t.id));
@@ -93,7 +105,7 @@ export default function HomeClient({
       for (const t of list) {
         if (!t.id || impressed.current.has(t.id)) continue;
         impressed.current.add(t.id);
-        trackEvent({ eventType: "impression", trackId: t.id, source: "home_wall" });
+        trackEvent({ eventType: "impression", trackId: t.id, source: "home_feed" });
         if (++sent >= 60) break;
       }
     };
@@ -103,11 +115,11 @@ export default function HomeClient({
 
   const handlePlay = (track: Track) => {
     if (!track.id) return;
-    trackEvent({ eventType: "click", trackId: track.id, source: "home_wall" });
-    const queue = items;
+    const queue = items.filter((t) => t.id && !hidden.has(t.id));
     const idx = queue.findIndex((t) => t.id === track.id);
+    trackEvent({ eventType: "click", trackId: track.id, source: "home_feed" });
     setQueue(queue, idx >= 0 ? idx : 0);
-    trackEvent({ eventType: "open", trackId: track.id, source: "home_wall" });
+    trackEvent({ eventType: "open", trackId: track.id, source: "home_feed" });
   };
 
   return (
@@ -128,12 +140,16 @@ export default function HomeClient({
             onLike={async () => {
               if (!t.id) return;
               await fetch(`/api/tracks/${t.id}/like`, { method: "POST" });
-              trackEvent({ eventType: "like", trackId: t.id, source: "home_wall" });
+              trackEvent({ eventType: "like", trackId: t.id, source: "home_feed" });
             }}
             onNotInterested={
               t.id
                 ? () => {
-                    trackEvent({ eventType: "not_interested", trackId: t.id as string, source: "home_wall" });
+                    trackEvent({
+                      eventType: "not_interested",
+                      trackId: t.id as string,
+                      source: "home_feed",
+                    });
                     setHidden((prev) => new Set(prev).add(t.id as string));
                   }
                 : undefined
@@ -144,12 +160,32 @@ export default function HomeClient({
 
       {hasMore && (
         <div ref={sentinel} className="flex items-center justify-center py-10 text-sm text-muted">
-          {loading ? "Loading…" : "Scroll for more"}
+          {loading ? "Loading more songs…" : "Scroll for more"}
         </div>
       )}
 
+      {error && (
+        <div className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-center">
+          <p className="text-sm text-destructive">{error}</p>
+          <button
+            onClick={() => void (cursor ? loadMore() : refreshFeed())}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!hasMore && !error && (
+        <p className="text-center text-sm text-muted">
+          You&apos;ve reached the end — that&apos;s the whole catalog. Refresh to reshuffle.
+        </p>
+      )}
+
       {visibleTracks.length === 0 && (
-        <p className="text-center text-sm text-muted">Nothing here — listen to something and your wall will fill up.</p>
+        <p className="text-center text-sm text-muted">
+          Nothing here — listen to something and your feed will fill up.
+        </p>
       )}
     </div>
   );

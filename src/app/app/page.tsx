@@ -1,18 +1,16 @@
 import { auth } from "@/auth";
-import { getWallPage } from "@/services/wall";
+import { getHomeFeedPage } from "@/services/home-feed";
 import HomeClient from "./_components/HomeClient";
 
 export default async function HomePage() {
   const session = await auth();
   const userId = session!.user.id;
-  const variant = new Date().getTime().toString();
-  const first = await getWallPage(userId, 0, 60, variant);
+  const first = await getHomeFeedPage(userId, { limit: 60 });
   return (
     <HomeClient
       initialItems={first.items}
-      initialNextOffset={first.nextOffset}
+      initialCursor={first.nextCursor}
       initialHasMore={first.hasMore}
-      initialVariant={variant}
     />
   );
 }
