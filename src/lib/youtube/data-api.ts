@@ -204,11 +204,19 @@ export async function trendingYouTubeMusic(
   regionCode = "IN",
   maxResults = 14
 ): Promise<YoutubeSearchHit[]> {
+  return mostPopularChart(regionCode, "10", maxResults);
+}
+
+async function mostPopularChart(
+  regionCode: string,
+  categoryId: string,
+  maxResults: number
+): Promise<YoutubeSearchHit[]> {
   const key = apiKey();
   const url = new URL("https://www.googleapis.com/youtube/v3/videos");
   url.searchParams.set("part", "snippet,contentDetails,statistics");
   url.searchParams.set("chart", "mostPopular");
-  url.searchParams.set("videoCategoryId", "10"); // Music
+  url.searchParams.set("videoCategoryId", categoryId);
   url.searchParams.set("regionCode", regionCode);
   url.searchParams.set("maxResults", String(maxResults));
   url.searchParams.set("key", key);
@@ -217,58 +225,59 @@ export async function trendingYouTubeMusic(
   return res.items.map(mapTrendingItem);
 }
 
-// Podcasts have no dedicated chart category, so the trending rail is built by
-// searching live talk/interview/story terms (by view count) and merging them,
-// biased toward full-length episodes over Shorts/clips. Queries are rotated
-// round-robin so one broad term can't drown out the variety.
-const PODCAST_TRENDING_QUERIES: readonly string[] = [
-  "raj shamani podcast",
-  "podcast interview",
-  "podcast",
-  "storytime podcast",
-];
+// Podcasts have no dedicated chart category. YouTube's search.list endpoint is
+// also aggressively rate-limited from serverless/Vercel egress IPs, so the
+// trending rail is computed once and memoized for hours: a single search.list
+// call for "podcast" ordered by view count, falling back to the durable
+// videos.list "People & Blogs" chart when search is throttled. Results are
+// biased toward full-length episodes (talk shows and storytimes) over Shorts.
+const TRENDING_MEMO_TTL_MS = 6 * 60 * 60 * 1000;
+
+const trendingMemos = new Map<string, { at: number; value: YoutubeSearchHit[] }>();
 
 export async function trendingYouTubePodcasts(
   regionCode = "IN",
   maxResults = 30
 ): Promise<YoutubeSearchHit[]> {
-  const buckets = await Promise.all(
-    PODCAST_TRENDING_QUERIES.map((q) =>
-      searchYouTubeVideos({
-        query: q,
-        maxResults: 12,
-        regionCode,
-        order: "viewCount",
-        withDurations: false,
-      })
-    )
-  );
-
-  const merged: YoutubeSearchHit[] = [];
-  const seen = new Set<string>();
-  const cursor = buckets.map(() => 0);
-  let progressed = true;
-  while (merged.length < maxResults && progressed) {
-    progressed = false;
-    for (let b = 0; b < buckets.length && merged.length < maxResults; b++) {
-      const bucket = buckets[b];
-      while (cursor[b] < bucket.length) {
-        const hit = bucket[cursor[b]++];
-        if (!hit || seen.has(hit.videoId)) continue;
-        seen.add(hit.videoId);
-        merged.push(hit);
-        progressed = true;
-        break;
-      }
-    }
+  const memoKey = `${regionCode}:${maxResults}`;
+  const memo = trendingMemos.get(memoKey);
+  if (memo && Date.now() - memo.at < TRENDING_MEMO_TTL_MS) {
+    return memo.value;
   }
 
-  await attachDurations(merged);
+  const value = await computeTrendingPodcasts(regionCode, maxResults);
+  trendingMemos.set(memoKey, { at: Date.now(), value });
+  return value;
+}
 
-  // Bias toward full-length episodes (>10 min) so the rail feels like a talk
-  // show instead of short clips, without dropping shorts entirely.
-  const long = merged.filter((h) => (h.durationSec ?? 0) >= 600);
-  const short = merged.filter((h) => (h.durationSec ?? 0) < 600);
+async function computeTrendingPodcasts(
+  regionCode: string,
+  maxResults: number
+): Promise<YoutubeSearchHit[]> {
+  try {
+    const found = await searchYouTubeVideos({
+      query: "podcast",
+      maxResults,
+      regionCode,
+      order: "viewCount",
+      withDurations: true,
+    });
+    if (found.length > 0) return preferLongEpisodes(found, maxResults);
+  } catch {
+    // search.list throttled — fall back to the durable chart below.
+  }
+
+  try {
+    const chart = await mostPopularChart(regionCode, "22", maxResults);
+    return preferLongEpisodes(chart, maxResults);
+  } catch {
+    return [];
+  }
+}
+
+function preferLongEpisodes(hits: YoutubeSearchHit[], maxResults: number): YoutubeSearchHit[] {
+  const long = hits.filter((h) => (h.durationSec ?? 0) >= 600);
+  const short = hits.filter((h) => (h.durationSec ?? 0) < 600);
   return [...long, ...short].slice(0, maxResults);
 }
 
