@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Mic2, Library, ListMusic, Heart, Settings } from "lucide-react";
+import { Home, Mic2, Library, ListMusic, Heart, Settings, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 
@@ -28,8 +28,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Logo */}
       <Link
         href="/app"
-        onClick={onNavigate}
-        className="flex items-center gap-2.5 px-5 py-6"
+        onClick={(e) => {
+          if (pathname === "/app") {
+            e.preventDefault();
+            window.dispatchEvent(new Event("geet:refresh-wall"));
+          }
+          onNavigate?.();
+        }}
+        className="group flex items-center gap-2.5 px-5 py-6"
+        title="Refresh feed"
       >
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -39,6 +46,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <span className="font-display text-[22px] font-bold tracking-tight text-foreground">
           GEET
         </span>
+        <RefreshCw
+          className="h-4 w-4 text-muted opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden
+        />
       </Link>
 
       {/* Nav */}

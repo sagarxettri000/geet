@@ -12,7 +12,7 @@ export default async function HomePage() {
       initialItems={first.items}
       initialNextOffset={first.nextOffset}
       initialHasMore={first.hasMore}
-      variant={variant}
+      initialVariant={variant}
     />
   );
 }

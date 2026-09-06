@@ -10,23 +10,49 @@ export default function HomeClient({
   initialItems,
   initialNextOffset,
   initialHasMore,
-  variant,
+  initialVariant,
 }: {
   initialItems: Track[];
   initialNextOffset: number;
   initialHasMore: boolean;
-  variant: string;
+  initialVariant: string;
 }) {
   const [items, setItems] = useState<Track[]>(initialItems);
   const [nextOffset, setNextOffset] = useState(initialNextOffset);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loading, setLoading] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [flash, setFlash] = useState(false);
+  const [variant, setVariant] = useState(initialVariant);
   const impressed = useRef<Set<string>>(new Set());
   const sentinel = useRef<HTMLDivElement | null>(null);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
   const visibleTracks = items.filter((t) => t.id && !hidden.has(t.id));
+
+  useEffect(() => {
+    const onRefresh = () => {
+      const v = Math.random().toString(36).slice(2, 12);
+      setVariant(v);
+      setLoading(true);
+      fetch(`/api/wall?offset=0&limit=60&variant=${v}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          setItems(data.items as Track[]);
+          setNextOffset(data.nextOffset as number);
+          setHasMore(data.hasMore as boolean);
+          impressed.current.clear();
+          setHidden(new Set());
+          setFlash(true);
+          setTimeout(() => setFlash(false), 1200);
+        })
+        .finally(() => setLoading(false));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener("geet:refresh-wall" as keyof WindowEventMap, onRefresh);
+    return () => window.removeEventListener("geet:refresh-wall" as keyof WindowEventMap, onRefresh);
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -86,6 +112,12 @@ export default function HomeClient({
 
   return (
     <div className="space-y-6">
+      {flash && (
+        <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
+          New for you — refreshed
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {visibleTracks.map((t) => (
           <TrackCard
