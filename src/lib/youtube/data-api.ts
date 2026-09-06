@@ -290,7 +290,7 @@ async function computeTrendingPodcasts(maxResults: number): Promise<YoutubeSearc
   const key = apiKey();
   const results = await Promise.allSettled(
     PODCAST_TRENDING_CHANNELS.map(({ handle, seedId }) =>
-      channelUploads(handle, seedId, key, 5)
+      channelUploads(handle, seedId, key, 8)
     )
   );
 
@@ -317,7 +317,11 @@ async function computeTrendingPodcasts(maxResults: number): Promise<YoutubeSearc
   }
 
   await attachDurations(merged);
-  return preferLongEpisodes(merged, maxResults);
+
+  // Drop Shorts/clips so the rail stays full-length talk; only fall back to
+  // shorts if there is nothing long at all.
+  const ordered = preferLongEpisodes(merged, maxResults);
+  return ordered.length > 0 ? ordered : merged.slice(0, maxResults);
 }
 
 // Pulls the N most recent uploads for a channel, resolving the channel from a
@@ -402,7 +406,9 @@ async function uploadsPlaylistId(channelId: string, key: string): Promise<string
 
 function preferLongEpisodes(hits: YoutubeSearchHit[], maxResults: number): YoutubeSearchHit[] {
   const long = hits.filter((h) => (h.durationSec ?? 0) >= 600);
-  const short = hits.filter((h) => (h.durationSec ?? 0) < 600);
+  const short = hits.filter(
+    (h) => (h.durationSec ?? 0) < 600 && (h.durationSec ?? 0) >= 90
+  );
   return [...long, ...short].slice(0, maxResults);
 }
 
