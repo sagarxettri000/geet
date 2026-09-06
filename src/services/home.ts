@@ -1,39 +1,16 @@
 import { db } from "@/lib/db";
 import { trackToDTO } from "@/services/music";
-import { trendingYouTubeMusic } from "@/lib/youtube/data-api";
 import type { HomeSection } from "@/types/music";
 
 export async function buildHomeFeed(userId: string) {
-  const [continueListening, recentlyPlayed, youtubeTrending, releases, genres, likedTracksFeed, recommendations] =
-    await Promise.all([
-      loadContinueListening(userId),
-      loadRecentlyPlayed(userId),
-      loadYouTubeTrending(),
-      loadNewReleases(userId),
-      loadGenres(userId),
-      loadLikedTracks(userId),
-      loadRecommendations(userId),
-    ]);
+  const [recommendations, likedTracksFeed] = await Promise.all([
+    loadRecommendations(userId),
+    loadLikedTracks(userId),
+  ]);
 
   const sections: HomeSection<unknown>[] = [];
 
-  if (continueListening.length > 0) {
-    sections.push({
-      key: "continue-listening",
-      title: "Play it again",
-      subtitle: "Where you left off",
-      items: continueListening,
-    });
-  }
-
-  sections.push({
-    key: "recently-played",
-    title: "Recently played",
-    subtitle: "Tap to jump back in",
-    items: recentlyPlayed,
-  });
-
-  // YouTube-style rows: based on who/what you actually listen to.
+  // YouTube-style feed: rows that keep suggesting new songs to play next.
   for (const rec of recommendations) {
     sections.push({
       key: rec.key,
@@ -43,23 +20,7 @@ export async function buildHomeFeed(userId: string) {
     });
   }
 
-  if (youtubeTrending.length > 0) {
-    const market = (process.env.YOUTUBE_REGION ?? "IN").toUpperCase();
-    sections.push({
-      key: "youtube-trending",
-      title: "Trending on YouTube",
-      subtitle: `The real YouTube music hit list · ${market}`,
-      items: youtubeTrending,
-    });
-  }
-
-  sections.push({
-    key: "new-releases",
-    title: "New releases",
-    subtitle: "Fresh drops, just added",
-    items: releases,
-  });
-
+  // Your liked songs are always shown at the very end of the feed.
   if (likedTracksFeed.length > 0) {
     sections.push({
       key: "liked",
@@ -69,62 +30,7 @@ export async function buildHomeFeed(userId: string) {
     });
   }
 
-  sections.push({
-    key: "genres",
-    title: "Browse genres",
-    subtitle: "Pick your flavour",
-    items: genres,
-  });
-
   return { sections };
-}
-
-async function loadYouTubeTrending() {
-  const region = (process.env.YOUTUBE_REGION ?? "IN").toUpperCase().slice(0, 2);
-  try {
-    const hits = await trendingYouTubeMusic(region, 14);
-    return hits as unknown[];
-  } catch {
-    return [];
-  }
-}
-
-async function loadContinueListening(userId: string) {
-  const rows = await db.listeningHistory.findMany({
-    where: {
-      userId,
-      progressSec: { gt: 0 },
-      completion: { lt: 100 },
-    },
-    include: {
-      track: { include: { sources: true } },
-    },
-    orderBy: { playedAt: "desc" },
-    take: 12,
-  });
-
-  return rows.map((row) => ({
-    id: row.id,
-    track: trackToDTO(row.track),
-    playedAt: row.playedAt.toISOString(),
-    progressSec: row.progressSec,
-    durationSec: row.track.durationSec,
-    completion: row.completion,
-  }));
-}
-
-async function loadRecentlyPlayed(userId: string) {
-  const rows = await db.recentlyPlayed.findMany({
-    where: { userId },
-    include: { track: { include: { sources: true } } },
-    orderBy: { playedAt: "desc" },
-    take: 16,
-  });
-  return rows.map((row) => ({
-    id: row.id,
-    track: trackToDTO(row.track),
-    playedAt: row.playedAt.toISOString(),
-  }));
 }
 
 interface RecommendationRow {
@@ -143,7 +49,28 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     orderBy: { playedAt: "desc" },
     take: 100,
   });
-  if (history.length === 0) return [];
+  if (history.length === 0) {
+    // No listening history yet — serve a generic "popular right now" feed so
+    // the home page still behaves like YouTube and never feels empty.
+    const popular = await db.track.findMany({
+      include: { sources: true },
+      orderBy: [{ popularity: "desc" }],
+      take: 60,
+    });
+    const groups = new Map<string, typeof popular>();
+    for (const t of popular) {
+      const key = t.artistId ?? t.artistName;
+      if (groups.size >= 8) break;
+      if (!groups.has(key)) groups.set(key, []);
+      if (groups.get(key)!.length < 4) groups.get(key)!.push(t);
+    }
+    return shuffle([...groups.values()]).map((group, i) => ({
+      key: `popular-${i}`,
+      title: "Popular right now",
+      subtitle: `Top picks from ${group[0]?.artistName ?? "GEET"}`,
+      items: group.map((t) => trackToDTO(t, { liked: false })),
+    }));
+  }
 
   const listened = new Set(history.map((h) => h.track.id));
 
@@ -214,9 +141,9 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
 
   const rows: RecommendationRow[] = [];
 
-  // Rows 1–3: what you already like, fronted with the strongest matches.
+  // Rows 1–5: what you already like, fronted with the strongest matches.
   for (const artist of topArtists) {
-    if (rows.length >= 3) break;
+    if (rows.length >= 5) break;
     const where = artist.id ? { artistId: artist.id } : { artistName: artist.name };
     const byArtist = await db.track.findMany({
       where,
@@ -267,7 +194,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
 
   // Genre rows — "More {genre}", scored and never duplicating earlier rows.
   for (const [genreId] of shuffle([...genreCounts.entries()])) {
-    if (rows.length >= 3) break;
+    if (rows.length >= 8) break;
     const name = genreNameMap.get(genreId);
     if (!name) continue;
     const all = await db.track.findMany({
@@ -296,7 +223,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     take: 24,
   });
   for (const artist of shuffle(freshArtists)) {
-    if (rows.length >= 4) break;
+    if (rows.length >= 9) break;
     const all = await db.track.findMany({
       where: { artistId: artist.id, id: { notIn: [...listened, ...picked] } },
       include: { sources: true },
@@ -314,7 +241,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
-  return rows.slice(0, 4);
+  return rows.slice(0, 9);
 }
 
 interface ScoreContext {
@@ -355,20 +282,6 @@ function rankTracks<T extends ScorableTrack>(
   return [...tracks].sort((a, b) => scoreTrack(b, ctx) - scoreTrack(a, ctx)).slice(0, count);
 }
 
-async function loadNewReleases(userId: string) {
-  const tracks = await db.track.findMany({
-    include: { sources: true },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-  });
-  const liked = await db.likedTrack.findMany({
-    where: { userId, trackId: { in: tracks.map((t) => t.id) } },
-    select: { trackId: true },
-  });
-  const set = new Set(liked.map((l) => l.trackId));
-  return tracks.map((t) => trackToDTO(t, { liked: set.has(t.id) }));
-}
-
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -376,21 +289,6 @@ function shuffle<T>(arr: T[]): T[] {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
-}
-
-async function loadGenres(userId: string) {
-  const genres = await db.genre.findMany({
-    include: { _count: { select: { tracks: true } } },
-  });
-  // Shuffle every load so the "suggested genres" feel fresh on each visit.
-  return shuffle(genres).map((g) => ({
-    id: g.id,
-    name: g.name,
-    slug: g.slug,
-    imageUrl: g.imageUrl,
-    thumbnailColor: g.thumbnailColor,
-    trackCount: g._count.tracks,
-  }));
 }
 
 async function loadLikedTracks(userId: string) {
