@@ -136,14 +136,15 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
 
   // Every visit pulls a fresh hand of top artists and genres.
   const topArtists = shuffle(
-    [...artistCounts.values()].sort((a, b) => b.count - a.count).slice(0, 12)
+    [...artistCounts.values()].sort((a, b) => b.count - a.count).slice(0, 24)
   );
 
   const rows: RecommendationRow[] = [];
 
-  // Rows 1–5: what you already like, fronted with the strongest matches.
+  // What you already like, fronted with the strongest matches — every artist
+  // you listen to gets a row, so the feed is long like YouTube's.
   for (const artist of topArtists) {
-    if (rows.length >= 5) break;
+    if (rows.length >= 12) break;
     const where = artist.id ? { artistId: artist.id } : { artistName: artist.name };
     const byArtist = await db.track.findMany({
       where,
@@ -194,7 +195,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
 
   // Genre rows — "More {genre}", scored and never duplicating earlier rows.
   for (const [genreId] of shuffle([...genreCounts.entries()])) {
-    if (rows.length >= 8) break;
+    if (rows.length >= 18) break;
     const name = genreNameMap.get(genreId);
     if (!name) continue;
     const all = await db.track.findMany({
@@ -214,16 +215,35 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
-  // Guaranteed exploration slice — YouTube always devotes part of the page to
+  // Fresh finds — the newest tracks you haven't heard yet, like YouTube's
+  // "new uploads" rows, scored so the ones matching your taste surface first.
+  const freshTracks = await db.track.findMany({
+    where: { id: { notIn: [...listened, ...picked] } },
+    include: { sources: true },
+    orderBy: [{ createdAt: "desc" }],
+    take: 30,
+  });
+  const freshPools = rankTracks(freshTracks, ctx, 10);
+  if (freshPools.length > 0) {
+    for (const t of freshPools) picked.add(t.id);
+    rows.push({
+      key: "fresh-finds",
+      title: "Fresh finds",
+      subtitle: "New on GEET",
+      items: freshPools.map((t) => trackToDTO(t, { liked: likedSet.has(t.id) })),
+    });
+  }
+
+  // Exploration slice — YouTube always devotes a big chunk of the page to
   // things you've never touched, even when predicted interest is lower. This is
   // the mechanism that stops the feed from looping on your favourites.
   const freshArtists = await db.artist.findMany({
     where: listenedArtists.size ? { id: { notIn: [...listenedArtists] } } : undefined,
     orderBy: { monthlyListeners: "desc" },
-    take: 24,
+    take: 40,
   });
   for (const artist of shuffle(freshArtists)) {
-    if (rows.length >= 9) break;
+    if (rows.length >= 24) break;
     const all = await db.track.findMany({
       where: { artistId: artist.id, id: { notIn: [...listened, ...picked] } },
       include: { sources: true },
@@ -241,7 +261,7 @@ async function loadRecommendations(userId: string): Promise<RecommendationRow[]>
     });
   }
 
-  return rows.slice(0, 9);
+  return rows.slice(0, 24);
 }
 
 interface ScoreContext {
