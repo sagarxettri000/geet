@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "@/stores/player";
 import { formatDuration, artworkFallback } from "@/lib/utils";
+import { trackEvent } from "@/lib/client-events";
 import { QueueDrawer } from "./QueueDrawer";
 
 export function PlayerBar() {
@@ -55,7 +56,11 @@ export function PlayerBar() {
       const res = await fetch(`/api/tracks/${trackId}/like`, {
         method: "POST",
       });
-      if (res.ok) usePlayerStore.getState().setTrackLiked(!liked);
+      if (res.ok) {
+        const newLiked = !liked;
+        usePlayerStore.getState().setTrackLiked(newLiked);
+        trackEvent({ eventType: newLiked ? "like" : "dislike", trackId, source: "player" });
+      }
     } catch {
       // ignore
     } finally {
@@ -135,14 +140,27 @@ export function PlayerBar() {
                 <SkipBack className="h-4 w-4 fill-current" />
               </button>
               <button
-                onClick={toggle}
+                onClick={() => {
+                  const nowPlaying = isPlaying;
+                  toggle();
+                  if (currentTrack.id) {
+                    trackEvent({
+                      eventType: nowPlaying ? "pause" : "resume",
+                      trackId: currentTrack.id,
+                      position: Math.floor(currentTime),
+                    });
+                  }
+                }}
                 aria-label={isPlaying ? "Pause" : "Play"}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary-hover transition-colors shadow"
               >
                 {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
               </button>
               <button
-                onClick={() => next()}
+                onClick={() => {
+                  if (currentTrack.id) trackEvent({ eventType: "skip", trackId: currentTrack.id, position: Math.floor(currentTime), source: "player" });
+                  next();
+                }}
                 aria-label="Next"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full text-foreground hover:bg-surface transition-colors"
               >

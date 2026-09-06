@@ -1,22 +1,34 @@
 import { cn } from "@/lib/utils";
 import type { Track } from "@/types/music";
 import { formatDuration, artworkFallback } from "@/lib/utils";
-import { Play, Heart, MoreHorizontal } from "lucide-react";
+import { Play, Heart, MoreHorizontal, X } from "lucide-react";
 
 export function TrackCard({
   track,
   onPlay,
   onLike,
   isLiked,
+  onNotInterested,
 }: {
   track: Track;
   onPlay?: () => void;
   onLike?: () => void;
   isLiked?: boolean;
+  onNotInterested?: () => void;
 }) {
   const thumb = track.thumbnailUrl;
   return (
     <div className="group relative overflow-hidden rounded-2xl bg-surface p-3 hover:bg-surface-strong transition-colors">
+      {onNotInterested && (
+        <button
+          onClick={onNotInterested}
+          aria-label="Not interested"
+          title="Not interested"
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
       <div className="relative aspect-square overflow-hidden rounded-xl bg-card">
         {thumb ? (
           // eslint-disable-next-line @next/next/no-img-element

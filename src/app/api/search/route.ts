@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { searchCatalog } from "@/services/music";
 import { searchYouTubeMusic } from "@/lib/youtube/data-api";
+import { recordEvent } from "@/services/recommend";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -28,6 +29,7 @@ export async function GET(req: Request) {
   if (userId) {
     // fire-and-forget, don't block response
     db.searchHistory.create({ data: { userId, query: q } }).catch(() => {});
+    recordEvent(userId, { eventType: "search", source: "search" }).catch(() => {});
   }
 
   return NextResponse.json({ ...catalog, ...(youtube ? { youtube } : {}) });

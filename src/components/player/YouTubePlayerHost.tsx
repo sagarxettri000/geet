@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { usePlayerStore } from "@/stores/player";
+import { trackEvent } from "@/lib/client-events";
 import type { Track } from "@/types/music";
 
 type YTPlayer = {
@@ -154,6 +155,7 @@ export default function YouTubePlayerHost() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoIdRef = useRef<string | null>(null);
+  const lastPlayRef = useRef<string | null>(null);
 
   const getStore = useCallback(() => usePlayerStore.getState(), []);
   const debug = useCallback(
@@ -282,27 +284,52 @@ export default function YouTubePlayerHost() {
               const ev = e as { data: number; target: YTPlayer };
               const store = getStore();
               const YTState = window.YT.PlayerState;
+              const st = store;
               switch (ev.data) {
-                case YTState.PLAYING:
-                  store.setStatus("playing");
+                case YTState.PLAYING: {
+                  st.setStatus("playing");
                   debug("playing");
                   unmuteIfPlaying();
+                  const trackId = st.currentTrack?.id;
+                  if (trackId && lastPlayRef.current !== trackId) {
+                    lastPlayRef.current = trackId;
+                    const dur = typeof ev.target.getDuration === "function" ? Math.floor(ev.target.getDuration()) : undefined;
+                    trackEvent({ eventType: "play_start", trackId, duration: dur, source: "player" });
+                  }
                   break;
-                case YTState.PAUSED:
-                  store.setStatus("paused");
+                }
+                case YTState.PAUSED: {
+                  st.setStatus("paused");
                   debug("paused");
+                  const trackId = st.currentTrack?.id;
+                  if (trackId) {
+                    trackEvent({
+                      eventType: "pause",
+                      trackId,
+                      position: typeof ev.target.getCurrentTime === "function" ? Math.floor(ev.target.getCurrentTime()) : undefined,
+                      source: "player",
+                    });
+                  }
                   break;
+                }
                 case YTState.BUFFERING:
-                  store.setStatus("loading");
+                  st.setStatus("loading");
                   debug("loading");
                   break;
-                case YTState.ENDED:
-                  store.setStatus("ended");
+                case YTState.ENDED: {
+                  st.setStatus("ended");
                   debug("ended");
-                  store.next({ auto: true });
+                  const trackId = st.currentTrack?.id;
+                  if (trackId) {
+                    const dur = typeof ev.target.getDuration === "function" ? Math.floor(ev.target.getDuration()) : undefined;
+                    trackEvent({ eventType: "complete", trackId, duration: dur, position: dur, source: "player" });
+                    lastPlayRef.current = null;
+                  }
+                  st.next({ auto: true });
                   break;
+                }
                 case YTState.UNSTARTED:
-                  store.setStatus("unstarted");
+                  st.setStatus("unstarted");
                   debug("unstarted");
                   break;
                 default:

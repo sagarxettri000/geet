@@ -41,6 +41,11 @@ model User {
   queue            Queue?
   reportsMade      Report[]          @relation("reportsMade")
 
+  events           UserEvent[]
+  recommendationProfile RecommendationProfile?
+  impressions      RecommendationImpression[]
+  recommendationFeedback RecommendationFeedback[]
+
   @@index([email])
 }
 
@@ -148,6 +153,10 @@ model Track {
   listened  ListeningHistory[]
   recentlyPlayed RecentlyPlayed[]
   featuredIn FeaturedContent[]
+
+  events      UserEvent[]
+  impressions RecommendationImpression[]
+  recommendationFeedback RecommendationFeedback[]
 
   @@index([title])
   @@index([artistName])
@@ -428,4 +437,79 @@ model AnalyticsEvent {
   createdAt DateTime @default(now())
 
   @@index([name, createdAt])
+}
+
+// ------------------------------------------------------------------ RECOMMENDATION ENGINE
+
+model UserEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  sessionId  String?
+  eventType  String // play_start | play | pause | resume | complete | rewatch | skip |
+                     // like | dislike | save | share | follow | unfollow |
+                     // impression | click | open | search | add_to_playlist | remove_from_playlist |
+                     // hide | not_interested | watch_progress | session_start | session_end
+  trackId    String?
+  value      Float? // signal strength/weight snapshot (0..1 or event weight)
+  position   Int? // seconds into the item
+  duration   Int? // seconds of content consumed in this event
+  source     String? // home_feed | search | playlist | queue | podcast | artist | album | ...
+  device     String? // mobile | desktop | tablet
+  properties String? // JSON extra (e.g. query, section, position in feed)
+  createdAt  DateTime @default(now())
+
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track? @relation(fields: [trackId], references: [id])
+
+  @@index([userId, eventType, createdAt])
+  @@index([userId, sessionId, createdAt])
+  @@index([trackId, eventType, createdAt])
+  @@index([eventType, createdAt])
+}
+
+// Cached/precomputed interest profile. Rebuilt from raw signals by the
+// profile service; stored so cold recompute isn't needed on every feed request.
+model RecommendationProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  profile   String // JSON — { artistAff, genreAff, creatorAff, formatPrefs, negative, signalCount, updatedAt }
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Every row/item served in a recommendation feed. Powers impression-based
+// analytics (CTR, exploration share) and lets the engine avoid re-serving.
+model RecommendationImpression {
+  id        String   @id @default(cuid())
+  userId    String
+  sessionId String?
+  trackId   String?
+  position  Int?
+  section   String? // section key (because-artist-* | because-genre-* | fresh-finds | discover-* | ...)
+  reason    String? // explainability reason string
+  createdAt DateTime @default(now())
+
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track? @relation(fields: [trackId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([userId, sessionId, createdAt])
+}
+
+// Durable negative/positive preference overrides (hide / not interested / dislike).
+model RecommendationFeedback {
+  id           String   @id @default(cuid())
+  userId       String
+  trackId      String?
+  artistId     String?
+  genreId      String?
+  feedbackType String // hide | not_interested | dislike | unfollow
+  createdAt    DateTime @default(now())
+
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track? @relation(fields: [trackId], references: [id])
+
+  @@index([userId, feedbackType, createdAt])
+  @@index([trackId])
 }
