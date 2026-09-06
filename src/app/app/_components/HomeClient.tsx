@@ -10,10 +10,12 @@ export default function HomeClient({
   initialItems,
   initialNextOffset,
   initialHasMore,
+  variant,
 }: {
   initialItems: Track[];
   initialNextOffset: number;
   initialHasMore: boolean;
+  variant: string;
 }) {
   const [items, setItems] = useState<Track[]>(initialItems);
   const [nextOffset, setNextOffset] = useState(initialNextOffset);
@@ -30,7 +32,7 @@ export default function HomeClient({
     if (loading || !hasMore) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/wall?offset=${nextOffset}&limit=48`);
+      const res = await fetch(`/api/wall?offset=${nextOffset}&limit=48&variant=${encodeURIComponent(variant)}`);
       if (!res.ok) return;
       const data = await res.json();
       setItems((prev) => {
@@ -43,7 +45,7 @@ export default function HomeClient({
     } finally {
       setLoading(false);
     }
-  }, [loading, hasMore, nextOffset]);
+  }, [loading, hasMore, nextOffset, variant]);
 
   useEffect(() => {
     const el = sentinel.current;
