@@ -238,9 +238,9 @@ async function buildColdStartFeed(userId: string, likedIds: Set<string>): Promis
     });
     if (tracks.length === 0) continue;
     sections.push({
-      key: `discover-${artist.id}`,
-      title: `Discover ${artist.name}`,
-      subtitle: "New to your ears",
+      key: `new-to-you-${artist.id}`,
+      title: "New to you",
+      subtitle: "Fresh picks we think you'll like",
       reason: "exploration",
       rowType: "exploration",
       items: tracks.map(toItem),

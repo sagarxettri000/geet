@@ -74,7 +74,7 @@ export function composeRows(scored: Candidate[], names: RowNames): RowGroup[] {
       artistCounts.set(key, (artistCounts.get(key) ?? 0) + items.length);
       groups.push({
         rowType: "creator_affinity",
-        title: `More from ${names.artistOf(key)}`,
+        title: `${names.artistOf(key)} Mix`,
         subtitle: subtitle(key),
         reason: "because_you_listened",
         key: `${prefix}-${encodeURIComponent(key)}`,
@@ -94,10 +94,10 @@ export function composeRows(scored: Candidate[], names: RowNames): RowGroup[] {
       genreCounts.set(genreId, (genreCounts.get(genreId) ?? 0) + items.length);
       groups.push({
         rowType: "similar_content",
-        title: `More ${names.genreOf(genreId)}`,
+        title: `${names.genreOf(genreId)} Mix`,
         subtitle: `Based on your ${names.genreOf(genreId)} listening`,
         reason: "similar_to_recently_watched",
-        key: `because-genre-${genreId}`,
+        key: `genre-mix-${genreId}`,
         items,
       });
     }
@@ -115,7 +115,7 @@ export function composeRows(scored: Candidate[], names: RowNames): RowGroup[] {
     });
   }
 
-  pushArtistRows(byArtist, "because-artist", (key) => `Because you've been listening to ${names.artistOf(key)}`);
+  pushArtistRows(byArtist, "artist-mix", () => "Recommended for you");
 
   pushGenreRows(byGenre);
 
@@ -159,10 +159,10 @@ export function composeRows(scored: Candidate[], names: RowNames): RowGroup[] {
     if (groups.length >= EXPLORATION.maxRows) break;
     groups.push({
       rowType: "exploration",
-      title: `Discover ${names.artistOf(key)}`,
-      subtitle: "New to your ears",
+      title: "New to you",
+      subtitle: "Fresh picks we think you'll like",
       reason: "exploration",
-      key: `discover-${encodeURIComponent(key)}`,
+      key: `new-to-you-${encodeURIComponent(key)}`,
       items: cands.slice(0, EXPLORATION.rowSize),
     });
   }

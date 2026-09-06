@@ -43,9 +43,10 @@ test("composeRows groups by artist and keeps artist rows complete", () => {
     ...Array.from({ length: 12 }, (_, i) => cand(`a2-${i}`, "a2", "g1", "user_interest")),
   ];
   const rows = composeRows(pool, names);
-  const artistRows = rows.filter((r) => r.key.startsWith("because-artist"));
+  const artistRows = rows.filter((r) => r.key.startsWith("artist-mix"));
   assert.equal(artistRows.length, 2);
   assert.ok(artistRows.every((r) => r.items.length > 0));
+  assert.ok(artistRows.every((r) => r.title.endsWith("Mix")));
 });
 
 test("composeRows includes fresh, trending and exploration rows", () => {
@@ -61,5 +62,5 @@ test("composeRows includes fresh, trending and exploration rows", () => {
   assert.ok(types.includes("trending"));
   assert.ok(types.includes("exploration"));
   const discover = rows.find((r) => r.rowType === "exploration");
-  assert.ok(discover?.title.startsWith("Discover"));
+  assert.equal(discover?.title, "New to you");
 });
