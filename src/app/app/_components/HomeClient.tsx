@@ -1,113 +1,121 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TrackCard } from "@/components/cards";
 import { usePlayerStore } from "@/stores/player";
 import { trackEvent } from "@/lib/client-events";
 import type { Track } from "@/types/music";
 
-type Section = {
-  key: string;
-  title: string;
-  subtitle?: string;
-  items: unknown[];
-};
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="mb-3 flex items-end justify-between">
-      <div>
-        <h2 className="text-base font-semibold leading-tight">{title}</h2>
-        {subtitle && <p className="text-xs text-muted">{subtitle}</p>}
-      </div>
-    </div>
-  );
-}
-
-function Carousel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2 -mx-1 px-1">
-      {children}
-    </div>
-  );
-}
-
-function isTrack(x: unknown): x is Track {
-  return !!x && typeof x === "object" && "title" in (x as Track) && "artist" in (x as Track);
-}
-
-export default function HomeClient({ sections }: { sections: Section[] }) {
+export default function HomeClient({
+  initialItems,
+  initialNextOffset,
+  initialHasMore,
+}: {
+  initialItems: Track[];
+  initialNextOffset: number;
+  initialHasMore: boolean;
+}) {
+  const [items, setItems] = useState<Track[]>(initialItems);
+  const [nextOffset, setNextOffset] = useState(initialNextOffset);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loading, setLoading] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const impressed = useRef<Set<string>>(new Set());
+  const sentinel = useRef<HTMLDivElement | null>(null);
   const setQueue = usePlayerStore((s) => s.setQueue);
 
-  const visibleFeed = useMemo(
-    () => sections.map((sec) => ({ ...sec, items: sec.items.filter((it) => !hidden.has((it as Track).id ?? "")) })),
-    [sections, hidden]
-  );
+  const visibleTracks = items.filter((t) => t.id && !hidden.has(t.id));
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/wall?offset=${nextOffset}&limit=48`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setItems((prev) => {
+        const seen = new Set(prev.map((t) => t.id).filter((x): x is string => !!x));
+        const fresh = (data.items as Track[]).filter((t) => t.id && !seen.has(t.id));
+        return [...prev, ...fresh];
+      });
+      setNextOffset(data.nextOffset as number);
+      setHasMore(data.hasMore as boolean);
+    } finally {
+      setLoading(false);
+    }
+  }, [loading, hasMore, nextOffset]);
 
   useEffect(() => {
-    const impressionIds: string[] = [];
-    let count = 0;
-    for (const sec of sections) {
-      for (const it of sec.items) {
-        const t = it as Track;
-        if (t?.id && count < 120) {
-          impressionIds.push(t.id);
-          count++;
-        }
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore();
+      },
+      { rootMargin: "1200px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loadMore]);
+
+  useEffect(() => {
+    const list = items.filter((t) => t.id && !hidden.has(t.id));
+    const report = () => {
+      let sent = 0;
+      for (const t of list) {
+        if (!t.id || impressed.current.has(t.id)) continue;
+        impressed.current.add(t.id);
+        trackEvent({ eventType: "impression", trackId: t.id, source: "home_wall" });
+        if (++sent >= 60) break;
       }
-    }
-    const t = setTimeout(() => {
-      for (const id of impressionIds) {
-        trackEvent({ eventType: "impression", trackId: id, source: "home_feed" });
-      }
-    }, 800);
-    return () => clearTimeout(t);
-  }, [sections]);
+    };
+    const timer = setTimeout(report, 600);
+    return () => clearTimeout(timer);
+  }, [items, hidden]);
+
+  const handlePlay = (track: Track) => {
+    if (!track.id) return;
+    trackEvent({ eventType: "click", trackId: track.id, source: "home_wall" });
+    const queue = items;
+    const idx = queue.findIndex((t) => t.id === track.id);
+    setQueue(queue, idx >= 0 ? idx : 0);
+    trackEvent({ eventType: "open", trackId: track.id, source: "home_wall" });
+  };
 
   return (
-    <div className="space-y-8">
-      {visibleFeed.map((sec) => {
-        const tracks: Track[] = sec.items.filter(isTrack);
-        if (tracks.length === 0) return null;
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {visibleTracks.map((t) => (
+          <TrackCard
+            key={t.id ?? t.title}
+            track={t}
+            isLiked={t.isLiked}
+            onPlay={() => handlePlay(t)}
+            onLike={async () => {
+              if (!t.id) return;
+              await fetch(`/api/tracks/${t.id}/like`, { method: "POST" });
+              trackEvent({ eventType: "like", trackId: t.id, source: "home_wall" });
+            }}
+            onNotInterested={
+              t.id
+                ? () => {
+                    trackEvent({ eventType: "not_interested", trackId: t.id as string, source: "home_wall" });
+                    setHidden((prev) => new Set(prev).add(t.id as string));
+                  }
+                : undefined
+            }
+          />
+        ))}
+      </div>
 
-        return (
-          <section key={sec.key}>
-            <SectionHeader title={sec.title} subtitle={sec.subtitle} />
-            <Carousel>
-              {tracks.map((t, i) => (
-                <div key={(t.id ?? t.title) + i} className="w-[168px] shrink-0 snap-start">
-                  <TrackCard
-                    track={t}
-                    isLiked={t.isLiked}
-                    onPlay={() => {
-                      if (t.id) trackEvent({ eventType: "click", trackId: t.id, source: "home_feed" });
-                      setQueue(tracks, i);
-                      if (t.id) trackEvent({ eventType: "open", trackId: t.id, source: "home_feed" });
-                    }}
-                    onLike={async () => {
-                      if (!t.id) return;
-                      await fetch(`/api/tracks/${t.id}/like`, { method: "POST" });
-                      trackEvent({ eventType: "like", trackId: t.id, source: "home_feed" });
-                    }}
-                    onNotInterested={
-                      t.id
-                        ? () => {
-                            trackEvent({ eventType: "not_interested", trackId: t.id as string, source: "home_feed" });
-                            setHidden((prev) => new Set(prev).add(t.id as string));
-                          }
-                        : undefined
-                    }
-                  />
-                </div>
-              ))}
-            </Carousel>
-          </section>
-        );
-      })}
+      {hasMore && (
+        <div ref={sentinel} className="flex items-center justify-center py-10 text-sm text-muted">
+          {loading ? "Loading…" : "Scroll for more"}
+        </div>
+      )}
 
-      {visibleFeed.every((sec) => (sec.items as unknown[]).length === 0) && (
-        <p className="text-center text-sm text-muted">Nothing here — listen to something and your feed will adapt.</p>
+      {visibleTracks.length === 0 && (
+        <p className="text-center text-sm text-muted">Nothing here — listen to something and your wall will fill up.</p>
       )}
     </div>
   );
