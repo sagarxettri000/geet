@@ -70,6 +70,31 @@ const trendingResponseSchema = z.object({
   ),
 });
 
+const playlistItemsSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string().optional().nullable(),
+      snippet: z.object({
+        title: z.string(),
+        channelTitle: z.string(),
+        description: z.string().optional().nullable(),
+        publishedAt: z.string(),
+        resourceId: z.object({ videoId: z.string() }),
+        thumbnails: z
+          .object({
+            maxres: z.object({ url: z.string().optional() }).optional(),
+            high: z.object({ url: z.string().optional() }).optional(),
+            medium: z.object({ url: z.string().optional() }).optional(),
+            default: z.object({ url: z.string().optional() }).optional(),
+          })
+          .catchall(z.unknown())
+          .optional()
+          .nullable(),
+      }),
+    })
+  ),
+});
+
 export interface YoutubeSearchHit {
   videoId: string;
   title: string;
@@ -225,12 +250,23 @@ async function mostPopularChart(
   return res.items.map(mapTrendingItem);
 }
 
-// Podcasts have no dedicated chart category. YouTube's search.list endpoint is
-// also aggressively rate-limited from serverless/Vercel egress IPs, so the
-// trending rail is computed once and memoized for hours: a single search.list
-// call for "podcast" ordered by view count, falling back to the durable
-// videos.list "People & Blogs" chart when search is throttled. Results are
-// biased toward full-length episodes (talk shows and storytimes) over Shorts.
+// Podcasts have no dedicated chart category, and YouTube's search.list is
+// aggressively rate-limited from serverless/Vercel egress IPs. The trending
+// rail is therefore built from a curated set of well-known Indian
+// talk/interview/storytime channels: each channel is resolved from a real
+// episode (seedId) via videos.list, its uploads feed is pulled through the
+// durable channels.list + playlistItems.list endpoints, merged newest-first,
+// and biased toward full-length episodes. Results are memoized for ~6h.
+//
+// These seedIds are real episode video IDs of public Indian podcast channels.
+// They are data, not opinion, and can be swapped by editing
+// PODCAST_TRENDING_CHANNELS.
+const PODCAST_TRENDING_CHANNELS: readonly { handle: string; seedId: string }[] = [
+  { handle: "Raj Shamani", seedId: "gHQo3UafM54" }, // FO 223 — Sunil Chhetri
+  { handle: "BeerBiceps", seedId: "ULqtrtdeZ9o" }, // TRS — Abhijit Iyer Mitra
+  { handle: "Dumb Biryani", seedId: "R9YO02PL-GU" }, // E6 — SRK & Big B lookalikes
+];
+
 const TRENDING_MEMO_TTL_MS = 6 * 60 * 60 * 1000;
 
 const trendingMemos = new Map<string, { at: number; value: YoutubeSearchHit[] }>();
@@ -245,33 +281,122 @@ export async function trendingYouTubePodcasts(
     return memo.value;
   }
 
-  const value = await computeTrendingPodcasts(regionCode, maxResults);
+  const value = await computeTrendingPodcasts(maxResults);
   trendingMemos.set(memoKey, { at: Date.now(), value });
   return value;
 }
 
-async function computeTrendingPodcasts(
-  regionCode: string,
-  maxResults: number
-): Promise<YoutubeSearchHit[]> {
-  try {
-    const found = await searchYouTubeVideos({
-      query: "podcast",
-      maxResults,
-      regionCode,
-      order: "viewCount",
-      withDurations: true,
-    });
-    if (found.length > 0) return preferLongEpisodes(found, maxResults);
-  } catch {
-    // search.list throttled — fall back to the durable chart below.
+async function computeTrendingPodcasts(maxResults: number): Promise<YoutubeSearchHit[]> {
+  const key = apiKey();
+  const results = await Promise.allSettled(
+    PODCAST_TRENDING_CHANNELS.map(({ handle, seedId }) =>
+      channelUploads(handle, seedId, key, 5)
+    )
+  );
+
+  const merged: YoutubeSearchHit[] = [];
+  const seen = new Set<string>();
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    for (const hit of r.value) {
+      if (seen.has(hit.videoId)) continue;
+      seen.add(hit.videoId);
+      merged.push(hit);
+    }
   }
 
-  try {
-    const chart = await mostPopularChart(regionCode, "22", maxResults);
-    return preferLongEpisodes(chart, maxResults);
-  } catch {
+  merged.sort((a, b) => {
+    const da = new Date(a.publishedAt).getTime();
+    const db = new Date(b.publishedAt).getTime();
+    return db - da;
+  });
+
+  if (merged.length === 0) {
+    // All channel feeds failed (e.g. no key) — nothing honest to show.
     return [];
+  }
+
+  await attachDurations(merged);
+  return preferLongEpisodes(merged, maxResults);
+}
+
+// Pulls the N most recent uploads for a channel, resolving the channel from a
+// real episode (seedId). videos.list, channels.list and playlistItems.list are
+// all far more tolerant of IP throttling than search.list.
+async function channelUploads(
+  handle: string,
+  seedId: string,
+  key: string,
+  limit: number
+): Promise<YoutubeSearchHit[]> {
+  const channelId = await channelIdForVideo(seedId, key);
+  if (!channelId) return [];
+  const uploadsId = await uploadsPlaylistId(channelId, key);
+  if (!uploadsId) return [];
+
+  const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("playlistId", uploadsId);
+  url.searchParams.set("maxResults", String(limit));
+  url.searchParams.set("key", key);
+
+  const res = await fetchJson(playlistItemsSchema, url);
+  return res.items
+    .filter((it) => it.snippet.resourceId.videoId)
+    .map((it) => ({
+      videoId: it.snippet.resourceId.videoId,
+      title: it.snippet.title,
+      channelTitle: it.snippet.channelTitle || handle,
+      description: it.snippet.description ?? null,
+      publishedAt: it.snippet.publishedAt,
+      thumbnailUrl: pickThumbnail(it.snippet.thumbnails),
+      durationSec: null,
+    }));
+}
+
+async function channelIdForVideo(videoId: string, key: string): Promise<string | null> {
+  try {
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("id", videoId);
+    url.searchParams.set("key", key);
+    const res = await fetchJson(
+      z.object({
+        items: z.array(
+          z.object({
+            snippet: z.object({ channelId: z.string() }),
+          })
+        ),
+      }),
+      url
+    );
+    return res.items[0]?.snippet.channelId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function uploadsPlaylistId(channelId: string, key: string): Promise<string | null> {
+  try {
+    const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+    url.searchParams.set("part", "contentDetails");
+    url.searchParams.set("id", channelId);
+    url.searchParams.set("key", key);
+    const res = await fetchJson(
+      z.object({
+        items: z.array(
+          z.object({
+            contentDetails: z.object({
+              relatedPlaylists: z.object({ uploads: z.string() }),
+            }),
+          })
+        ),
+      }),
+      url
+    );
+    return res.items[0]?.contentDetails.relatedPlaylists.uploads ?? null;
+  } catch {
+    return null;
   }
 }
 
